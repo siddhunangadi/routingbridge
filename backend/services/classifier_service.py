@@ -1,9 +1,9 @@
 """LLM-powered routing classifier.
 
-Uses a small, cheap model (configured in routing.yaml, default Gemini 2.5
-Flash) purely as a *router* — it never answers the user's prompt, only
-decides which routing tier should handle it. This mirrors a real production
-pattern: a cheap gating model in front of expensive ones.
+Uses a small, cheap model (configured in routing.yaml, default a Mistral
+model via OpenRouter) purely as a *router* — it never answers the user's
+prompt, only decides which routing tier should handle it. This mirrors a
+real production pattern: a cheap gating model in front of expensive ones.
 
 Falls back to `heuristic_classifier` if the LLM call fails or returns
 output that doesn't validate against `RoutingDecision`. The fallback
@@ -15,12 +15,12 @@ import logging
 import time
 from functools import lru_cache
 
-import google.generativeai as genai
 from pydantic import ValidationError
 
 from backend.schemas.routing_decision import RoutingDecision, RoutingDecisionOutcome
 from backend.services.cost_estimator import estimate_cost
 from backend.services.heuristic_classifier import classify_heuristically
+from backend.services.providers.factory import get_provider
 from backend.utils.config import Settings, get_settings
 from backend.utils.yaml_config import load_routing_config
 
@@ -50,12 +50,14 @@ class ClassifierService:
         self._settings = settings
 
         routing_cfg = load_routing_config()["classifier"]
+        self._provider_name: str = routing_cfg["provider"]
         self._model_name: str = routing_cfg["model"]
         self._max_output_tokens: int = routing_cfg["max_output_tokens"]
 
-        self._client_ready = bool(settings.google_api_key)
+        api_key = getattr(settings, f"{self._provider_name}_api_key", "")
+        self._client_ready = bool(api_key)
         if self._client_ready:
-            genai.configure(api_key=settings.google_api_key)
+            self._provider = get_provider(self._provider_name, settings)
 
     def classify(self, prompt: str) -> RoutingDecisionOutcome:
         """Make a routing decision for a prompt, falling back to heuristics on any LLM failure."""
@@ -86,13 +88,8 @@ class ClassifierService:
         )
 
     def _classify_with_llm(self, prompt: str) -> tuple[RoutingDecision, int, int]:
-        model = genai.GenerativeModel(self._model_name)
-        response = model.generate_content(
-            _build_classifier_prompt(prompt),
-            generation_config=genai.types.GenerationConfig(
-                response_mime_type="application/json",
-                max_output_tokens=self._max_output_tokens,
-            ),
+        response = self._provider.generate(
+            _build_classifier_prompt(prompt), self._model_name, self._max_output_tokens
         )
 
         try:
@@ -101,10 +98,7 @@ class ClassifierService:
         except (json.JSONDecodeError, ValidationError) as exc:
             raise ValueError(f"Classifier returned invalid structured output: {exc}") from exc
 
-        usage = response.usage_metadata
-        input_tokens = usage.prompt_token_count if usage else 0
-        output_tokens = usage.candidates_token_count if usage else 0
-        return decision, input_tokens, output_tokens
+        return decision, response.input_tokens, response.output_tokens
 
 
 @lru_cache
