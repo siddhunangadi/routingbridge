@@ -31,18 +31,15 @@ CHART_LAYOUT = dict(
 )
 
 
-def _get(path: str, **params) -> dict | list | None:
-    try:
-        resp = httpx.get(f"{BACKEND_URL}{path}", params=params, timeout=30)
-        resp.raise_for_status()
-        return resp.json()
-    except httpx.HTTPError as exc:
-        st.error(f"Could not reach backend at {BACKEND_URL}{path}: {exc}")
-        return None
-
-
-def _post_chat_with_retry(prompt: str, max_wait_seconds: int = 60) -> dict | None:
-    """POST /chat, retrying quietly through a Render free-tier cold start.
+def _request_with_retry(
+    method: str,
+    path: str,
+    *,
+    json: dict | None = None,
+    params: dict | None = None,
+    max_wait_seconds: int = 60,
+) -> dict | list | None:
+    """Call the backend, retrying quietly through a Render free-tier cold start.
 
     A sleeping free-tier service returns Render's own HTML error page (no
     JSON body) while it wakes up — that's structurally different from our
@@ -59,7 +56,9 @@ def _post_chat_with_retry(prompt: str, max_wait_seconds: int = 60) -> dict | Non
     while True:
         attempt += 1
         try:
-            resp = httpx.post(f"{BACKEND_URL}/chat", json={"prompt": prompt}, timeout=30)
+            resp = httpx.request(
+                method, f"{BACKEND_URL}{path}", json=json, params=params, timeout=30
+            )
         except httpx.HTTPError:
             resp = None
 
@@ -101,7 +100,7 @@ def render_chat() -> None:
     send = st.button("Send", type="primary")
 
     if send and prompt.strip():
-        data = _post_chat_with_retry(prompt)
+        data = _request_with_retry("POST", "/chat", json={"prompt": prompt})
         if data is None:
             return
 
@@ -170,7 +169,7 @@ def render_chat() -> None:
 def render_history() -> None:
     page_header("History", "Every request this app has routed, most recent first.")
 
-    rows = _get("/history", limit=200)
+    rows = _request_with_retry("GET", "/history", params={"limit": 200})
     if rows is None:
         return
     if not rows:
@@ -243,7 +242,7 @@ def _bar_chart(labels: list[str], values: list[float], color: str) -> go.Figure:
 def render_analytics() -> None:
     page_header("Analytics", "How RoutingBridge is routing traffic and what it costs.")
 
-    stats = _get("/stats")
+    stats = _request_with_retry("GET", "/stats")
     if stats is None:
         return
     if stats["total_requests"] == 0:
@@ -296,7 +295,7 @@ def render_settings() -> None:
         "otherwise a read-only view."
     )
 
-    data = _get("/models")
+    data = _request_with_retry("GET", "/models")
     if data is None:
         return
 
