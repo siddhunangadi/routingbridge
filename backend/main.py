@@ -5,7 +5,7 @@ import logging
 from fastapi import FastAPI
 
 from backend.database.db import Base, engine
-from backend.routers import chat
+from backend.routers import chat, history, models, stats
 from backend.utils.config import get_settings
 from backend.utils.logging_setup import configure_logging
 
@@ -20,6 +20,9 @@ app = FastAPI(
 )
 
 app.include_router(chat.router, tags=["chat"])
+app.include_router(history.router, tags=["history"])
+app.include_router(stats.router, tags=["stats"])
+app.include_router(models.router, tags=["models"])
 
 
 @app.get("/health")
