@@ -1,9 +1,10 @@
 """Quality verification: an LLM judge grading whether the cheap tier's
 answer was actually good enough.
 
-Reuses the same cheap classifier model (Gemini 2.5 Flash) rather than
-introducing a second model just for judging — the judge's job is small
-(read a Q&A pair, say pass/fail) and doesn't need a bigger model.
+Reuses the same cheap classifier model (a Mistral model via OpenRouter,
+see routing.yaml) rather than introducing a second model just for judging —
+the judge's job is small (read a Q&A pair, say pass/fail) and doesn't need
+a bigger model.
 
 Only called for BASIC/STANDARD tier answers (see chat.py) — there's no
 value judging the ADVANCED tier against itself, since routing already
@@ -18,10 +19,8 @@ import json
 import logging
 from functools import lru_cache
 
-import google.generativeai as genai
-from pydantic import ValidationError
-
 from backend.schemas.quality import QualityVerdict
+from backend.services.providers.factory import get_provider
 from backend.utils.config import Settings, get_settings
 from backend.utils.yaml_config import load_routing_config
 
@@ -43,22 +42,20 @@ def _build_verdict_prompt(prompt: str, response: str) -> str:
 class QualityVerifier:
     def __init__(self, settings: Settings):
         routing_cfg = load_routing_config()["classifier"]
+        provider_name: str = routing_cfg["provider"]
         self._model_name: str = routing_cfg["model"]
-        self._client_ready = bool(settings.google_api_key)
+
+        api_key = getattr(settings, f"{provider_name}_api_key", "")
+        self._client_ready = bool(api_key)
         if self._client_ready:
-            genai.configure(api_key=settings.google_api_key)
+            self._provider = get_provider(provider_name, settings)
 
     def verify(self, prompt: str, response: str) -> QualityVerdict | None:
         if not self._client_ready:
             return None
         try:
-            model = genai.GenerativeModel(self._model_name)
-            result = model.generate_content(
-                _build_verdict_prompt(prompt, response),
-                generation_config=genai.types.GenerationConfig(
-                    response_mime_type="application/json",
-                    max_output_tokens=200,
-                ),
+            result = self._provider.generate(
+                _build_verdict_prompt(prompt, response), self._model_name, 200
             )
             data = json.loads(result.text)
             return QualityVerdict.model_validate(data)

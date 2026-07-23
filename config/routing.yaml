@@ -8,14 +8,13 @@
 # place that decision lives.
 
 classifier:
-  provider: google
-  model: gemini-2.5-flash
-  # Gemini 2.5 Flash spends part of this budget on internal "thinking"
-  # tokens before producing visible output, even for a tiny JSON reply —
-  # too small a budget truncates the JSON mid-string. Thinking token spend
-  # scales with prompt complexity, so this needs real headroom, not just
-  # enough for the classifier's own short response.
-  max_output_tokens: 1024
+  # Runs on every request (classify + quality-verify), so it competed with
+  # the BASIC tier's own Gemini calls for the same 20-request/day free-tier
+  # quota and exhausted it within minutes of real traffic. Moved to
+  # OpenRouter, which the STANDARD tier already uses without quota issues.
+  provider: openrouter
+  model: mistralai/mistral-small-3.2-24b-instruct
+  max_output_tokens: 512
 
 confidence_thresholds:
   high: 0.9
