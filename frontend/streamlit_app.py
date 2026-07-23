@@ -54,7 +54,15 @@ def render_chat() -> None:
                 resp = httpx.post(f"{BACKEND_URL}/chat", json={"prompt": prompt}, timeout=180)
                 resp.raise_for_status()
             except httpx.HTTPStatusError as exc:
-                detail = exc.response.json().get("detail", str(exc))
+                # Not every non-2xx response has a JSON body — a platform-level
+                # error (e.g. Render's proxy timing out a cold-started backend)
+                # can return an HTML/plain-text error page instead of our
+                # FastAPI error JSON, and .json() on that raises its own
+                # exception. Fall back to raw text rather than crashing the page.
+                try:
+                    detail = exc.response.json().get("detail", str(exc))
+                except ValueError:
+                    detail = exc.response.text or str(exc)
                 st.error(f"Request failed: {detail}")
                 return
             except httpx.HTTPError as exc:
