@@ -7,6 +7,8 @@ provider/model currently serves each tier. Swapping which model serves
 ADVANCED is a one-line YAML edit; this file never changes.
 """
 
+from functools import lru_cache
+
 from backend.schemas.routing import RoutingResult
 from backend.schemas.routing_decision import RoutingDecision, RoutingTier
 from backend.utils.yaml_config import load_routing_config
@@ -53,3 +55,9 @@ class RoutingEngine:
             escalated=escalated,
             reasons=reasons,
         )
+
+
+@lru_cache
+def get_routing_engine() -> RoutingEngine:
+    """FastAPI dependency: one engine instance per process, same pattern as get_settings()."""
+    return RoutingEngine()

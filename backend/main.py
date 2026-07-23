@@ -4,6 +4,8 @@ import logging
 
 from fastapi import FastAPI
 
+from backend.database.db import Base, engine
+from backend.routers import chat
 from backend.utils.config import get_settings
 from backend.utils.logging_setup import configure_logging
 
@@ -17,6 +19,8 @@ app = FastAPI(
     version="0.1.0",
 )
 
+app.include_router(chat.router, tags=["chat"])
+
 
 @app.get("/health")
 def health() -> dict:
@@ -26,4 +30,5 @@ def health() -> dict:
 
 @app.on_event("startup")
 def on_startup() -> None:
+    Base.metadata.create_all(bind=engine)
     logger.info("ModelPilot API starting up")

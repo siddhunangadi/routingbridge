@@ -13,14 +13,16 @@ is the exception path, not the primary one — see `classify()`.
 import json
 import logging
 import time
+from functools import lru_cache
 
 import google.generativeai as genai
 from pydantic import ValidationError
 
 from backend.schemas.routing_decision import RoutingDecision, RoutingDecisionOutcome
+from backend.services.cost_estimator import estimate_cost
 from backend.services.heuristic_classifier import classify_heuristically
-from backend.utils.config import Settings
-from backend.utils.yaml_config import load_pricing_config, load_routing_config
+from backend.utils.config import Settings, get_settings
+from backend.utils.yaml_config import load_routing_config
 
 logger = logging.getLogger(__name__)
 
@@ -51,10 +53,6 @@ class ClassifierService:
         self._model_name: str = routing_cfg["model"]
         self._max_output_tokens: int = routing_cfg["max_output_tokens"]
 
-        pricing = load_pricing_config()["models"][self._model_name]
-        self._input_price_per_million: float = pricing["input_per_million"]
-        self._output_price_per_million: float = pricing["output_per_million"]
-
         self._client_ready = bool(settings.google_api_key)
         if self._client_ready:
             genai.configure(api_key=settings.google_api_key)
@@ -75,7 +73,7 @@ class ClassifierService:
             fallback_used = True
 
         latency_ms = (time.perf_counter() - start) * 1000
-        cost = 0.0 if fallback_used else self._estimate_cost(input_tokens, output_tokens)
+        cost = 0.0 if fallback_used else estimate_cost(self._model_name, input_tokens, output_tokens)
 
         return RoutingDecisionOutcome(
             decision=decision,
@@ -108,7 +106,8 @@ class ClassifierService:
         output_tokens = usage.candidates_token_count if usage else 0
         return decision, input_tokens, output_tokens
 
-    def _estimate_cost(self, input_tokens: int, output_tokens: int) -> float:
-        input_cost = (input_tokens / 1_000_000) * self._input_price_per_million
-        output_cost = (output_tokens / 1_000_000) * self._output_price_per_million
-        return round(input_cost + output_cost, 8)
+
+@lru_cache
+def get_classifier_service() -> ClassifierService:
+    """FastAPI dependency: one classifier instance per process, same pattern as get_settings()."""
+    return ClassifierService(get_settings())
