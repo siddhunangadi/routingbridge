@@ -8,6 +8,7 @@ file is purely page layout and API calls — no backend/API changes here.
 """
 
 import os
+import time
 
 import httpx
 import pandas as pd
@@ -40,6 +41,57 @@ def _get(path: str, **params) -> dict | list | None:
         return None
 
 
+def _post_chat_with_retry(prompt: str, max_wait_seconds: int = 60) -> dict | None:
+    """POST /chat, retrying quietly through a Render free-tier cold start.
+
+    A sleeping free-tier service returns Render's own HTML error page (no
+    JSON body) while it wakes up — that's structurally different from our
+    API's own errors, which are always JSON with a "detail" field. That
+    distinction is what tells us whether to retry (platform waking up) or
+    stop and show the real error (our API rejected the request). Retrying
+    quietly for the ~30-60s a cold start takes is what lets a shared demo
+    link survive someone's first cold click instead of showing raw HTML.
+    """
+    deadline = time.time() + max_wait_seconds
+    attempt = 0
+    status_box = st.empty()
+
+    while True:
+        attempt += 1
+        try:
+            resp = httpx.post(f"{BACKEND_URL}/chat", json={"prompt": prompt}, timeout=30)
+        except httpx.HTTPError:
+            resp = None
+
+        if resp is not None:
+            try:
+                data = resp.json()
+            except ValueError:
+                data = None  # platform-level error page, not our API's JSON
+
+            if data is not None:
+                status_box.empty()
+                if resp.status_code == 200:
+                    return data
+                st.error(data.get("detail", f"Request failed ({resp.status_code})."))
+                return None
+
+        if time.time() >= deadline:
+            status_box.empty()
+            st.error(
+                "The backend is taking longer than expected to wake up. "
+                "Please wait a moment and try again."
+            )
+            return None
+
+        status_box.info(
+            "Starting the AI service... this demo runs on a free hosting "
+            "tier that sleeps after inactivity, so the first request can "
+            f"take up to a minute. Retrying (attempt {attempt})..."
+        )
+        time.sleep(4)
+
+
 def render_chat() -> None:
     page_header("Chat", "Every prompt is routed to the cheapest model that can handle it well.")
 
@@ -49,27 +101,9 @@ def render_chat() -> None:
     send = st.button("Send", type="primary")
 
     if send and prompt.strip():
-        with st.spinner("Classifying and routing..."):
-            try:
-                resp = httpx.post(f"{BACKEND_URL}/chat", json={"prompt": prompt}, timeout=180)
-                resp.raise_for_status()
-            except httpx.HTTPStatusError as exc:
-                # Not every non-2xx response has a JSON body — a platform-level
-                # error (e.g. Render's proxy timing out a cold-started backend)
-                # can return an HTML/plain-text error page instead of our
-                # FastAPI error JSON, and .json() on that raises its own
-                # exception. Fall back to raw text rather than crashing the page.
-                try:
-                    detail = exc.response.json().get("detail", str(exc))
-                except ValueError:
-                    detail = exc.response.text or str(exc)
-                st.error(f"Request failed: {detail}")
-                return
-            except httpx.HTTPError as exc:
-                st.error(f"Could not reach backend: {exc}")
-                return
-
-        data = resp.json()
+        data = _post_chat_with_retry(prompt)
+        if data is None:
+            return
 
         # A raw HTML string card (open-div/content/close-div across separate
         # st.markdown calls) doesn't actually nest — Streamlit renders each
