@@ -3,18 +3,31 @@
 One file, sidebar radio for navigation between four pages. No multipage
 framework, no page-router abstraction — for four screens that each just
 call one backend endpoint and render it, a single file with four small
-functions is the whole solution.
+functions is the whole solution. Visual design lives in theme.py; this
+file is purely page layout and API calls — no backend/API changes here.
 """
 
 import os
 
 import httpx
 import pandas as pd
+import plotly.graph_objects as go
 import streamlit as st
+
+from theme import COLORS, inject_theme, kv_row, metric_tile, page_header, tier_badge
 
 BACKEND_URL = os.getenv("BACKEND_URL", "http://localhost:8000")
 
-st.set_page_config(page_title="ModelPilot", page_icon="🧭", layout="wide")
+st.set_page_config(page_title="ModelPilot", page_icon=None, layout="wide")
+inject_theme()
+
+CHART_LAYOUT = dict(
+    paper_bgcolor="rgba(0,0,0,0)",
+    plot_bgcolor="rgba(0,0,0,0)",
+    font=dict(family="Inter, sans-serif", color=COLORS["text"], size=13),
+    margin=dict(l=10, r=10, t=10, b=10),
+    showlegend=False,
+)
 
 
 def _get(path: str, **params) -> dict | list | None:
@@ -28,14 +41,17 @@ def _get(path: str, **params) -> dict | list | None:
 
 
 def render_chat() -> None:
-    st.title("🧭 ModelPilot Chat")
-    st.caption("Every prompt is routed to the cheapest model that can handle it.")
+    page_header("Chat", "Every prompt is routed to the cheapest model that can handle it well.")
 
-    prompt = st.text_area("Enter your prompt", height=120, placeholder="Ask anything...")
-    if st.button("Send", type="primary") and prompt.strip():
+    prompt = st.text_area(
+        "Prompt", height=120, placeholder="Ask anything...", label_visibility="collapsed"
+    )
+    send = st.button("Send", type="primary")
+
+    if send and prompt.strip():
         with st.spinner("Classifying and routing..."):
             try:
-                resp = httpx.post(f"{BACKEND_URL}/chat", json={"prompt": prompt}, timeout=60)
+                resp = httpx.post(f"{BACKEND_URL}/chat", json={"prompt": prompt}, timeout=180)
                 resp.raise_for_status()
             except httpx.HTTPStatusError as exc:
                 detail = exc.response.json().get("detail", str(exc))
@@ -46,116 +62,228 @@ def render_chat() -> None:
                 return
 
         data = resp.json()
-        st.markdown("### Response")
-        st.write(data["response"])
 
-        c1, c2, c3, c4 = st.columns(4)
-        c1.metric("Model", data["model"])
-        c2.metric("Routing Tier", data["routing_tier"])
-        c3.metric("Total Cost", f"${data['total_cost']:.6f}")
-        c4.metric("Latency", f"{data['total_latency_ms']:.0f} ms")
+        # A raw HTML string card (open-div/content/close-div across separate
+        # st.markdown calls) doesn't actually nest — Streamlit renders each
+        # call as an isolated fragment. Using a native bordered container
+        # instead means st.write() still renders the model's own markdown
+        # (bold, lists, code) correctly; theme.py restyles its border to
+        # match the rest of the card system.
+        with st.container(border=True, key="response_card"):
+            st.markdown('<div class="mp-card-title">Response</div>', unsafe_allow_html=True)
+            st.write(data["response"])
 
-        with st.expander("Why this model was selected", expanded=True):
-            for reason in data["routing_reason"]:
-                st.write(f"- {reason}")
+        left, right = st.columns([1, 1], gap="medium")
+
+        with left:
+            escalation_note = ""
             if data["escalated"]:
-                st.info(
-                    f"Escalated from {data['original_tier']} tier due to low "
-                    f"classifier confidence ({data['confidence']:.2f})."
+                escalation_note = kv_row(
+                    "Escalated from", f"{data['original_tier']} (low confidence)"
                 )
-            fallback_note = " (fallback heuristic used)" if data["fallback_used"] else ""
-            st.caption(
-                f"Task type: {data['task_type']} · Reasoning level: {data['reasoning_level']} "
-                f"· Classifier: {data['classifier_model']}{fallback_note}"
+            rows = "".join(
+                [
+                    kv_row("Routing Tier", tier_badge(data["routing_tier"])),
+                    kv_row("Provider", data["provider"]),
+                    kv_row("Model", data["model"]),
+                    kv_row("Task Type", data["task_type"]),
+                    kv_row("Confidence", f"{data['confidence']:.2f}"),
+                    escalation_note,
+                ]
             )
+            st.markdown(
+                f'<div class="mp-card"><div class="mp-card-title">Routing Decision</div>{rows}</div>',
+                unsafe_allow_html=True,
+            )
+
+        with right:
+            fallback_note = " (heuristic fallback)" if data["fallback_used"] else ""
+            rows = "".join(
+                [
+                    kv_row("Total Cost", f"${data['total_cost']:.6f}"),
+                    kv_row("Model Cost", f"${data['model_cost']:.6f}"),
+                    kv_row("Classifier Cost", f"${data['classifier_cost']:.6f}"),
+                    kv_row("Latency", f"{data['total_latency_ms']:.0f} ms"),
+                    kv_row("Classifier", f"{data['classifier_model']}{fallback_note}"),
+                ]
+            )
+            st.markdown(
+                f'<div class="mp-card"><div class="mp-card-title">Cost & Latency</div>{rows}</div>',
+                unsafe_allow_html=True,
+            )
+
+        with st.expander("Why this model was selected"):
+            for reason in data["routing_reason"]:
+                st.write(f"— {reason}")
 
 
 def render_history() -> None:
-    st.title("📜 Request History")
-    rows = _get("/history", limit=100)
+    page_header("History", "Every request this app has routed, most recent first.")
+
+    rows = _get("/history", limit=200)
     if rows is None:
         return
     if not rows:
-        st.info("No requests yet — try the Chat page.")
+        st.markdown('<div class="mp-empty">No requests yet — try the Chat page.</div>', unsafe_allow_html=True)
         return
 
     df = pd.DataFrame(rows)
-    df = df[
+
+    col_search, col_filter = st.columns([2, 1])
+    with col_search:
+        search = st.text_input("Search prompts", placeholder="Search prompts...")
+    with col_filter:
+        tiers = ["All"] + sorted(df["routing_tier"].unique().tolist())
+        tier_filter = st.selectbox("Routing tier", tiers)
+
+    if search:
+        df = df[df["prompt"].str.contains(search, case=False, na=False)]
+    if tier_filter != "All":
+        df = df[df["routing_tier"] == tier_filter]
+
+    if df.empty:
+        st.markdown('<div class="mp-empty">No requests match this filter.</div>', unsafe_allow_html=True)
+        return
+
+    display_df = df[
         [
             "timestamp",
             "prompt",
             "routing_tier",
-            "escalated",
             "provider",
             "model",
             "total_cost",
             "total_latency_ms",
             "fallback_used",
         ]
-    ]
-    st.dataframe(df, use_container_width=True, hide_index=True)
+    ].rename(
+        columns={
+            "timestamp": "Time",
+            "prompt": "Prompt",
+            "routing_tier": "Tier",
+            "provider": "Provider",
+            "model": "Model",
+            "total_cost": "Cost ($)",
+            "total_latency_ms": "Latency (ms)",
+            "fallback_used": "Fallback",
+        }
+    )
+
+    st.dataframe(
+        display_df,
+        use_container_width=True,
+        hide_index=True,
+        column_config={
+            "Cost ($)": st.column_config.NumberColumn(format="$%.6f"),
+            "Latency (ms)": st.column_config.NumberColumn(format="%.0f"),
+        },
+    )
+
+
+def _bar_chart(labels: list[str], values: list[float], color: str) -> go.Figure:
+    fig = go.Figure(
+        go.Bar(x=values, y=labels, orientation="h", marker_color=color, marker_line_width=0)
+    )
+    fig.update_layout(**CHART_LAYOUT, height=max(160, 60 * len(labels)))
+    fig.update_xaxes(showgrid=True, gridcolor=COLORS["border"], zeroline=False)
+    fig.update_yaxes(showgrid=False)
+    return fig
 
 
 def render_analytics() -> None:
-    st.title("📊 Analytics Dashboard")
+    page_header("Analytics", "How ModelPilot is routing traffic and what it costs.")
+
     stats = _get("/stats")
     if stats is None:
         return
     if stats["total_requests"] == 0:
-        st.info("No requests yet — try the Chat page.")
+        st.markdown('<div class="mp-empty">No requests yet — try the Chat page.</div>', unsafe_allow_html=True)
         return
 
-    c1, c2, c3, c4 = st.columns(4)
-    c1.metric("Total Requests", stats["total_requests"])
-    c2.metric("Total Cost", f"${stats['total_cost']:.4f}")
-    c3.metric("Avg Latency", f"{stats['avg_latency_ms']:.0f} ms")
-    c4.metric("Estimated Savings", f"${stats['estimated_savings']:.4f}")
+    c1, c2, c3, c4 = st.columns(4, gap="small")
+    c1.markdown(metric_tile("Total Requests", str(stats["total_requests"])), unsafe_allow_html=True)
+    c2.markdown(metric_tile("Total Cost", f"${stats['total_cost']:.4f}"), unsafe_allow_html=True)
+    c3.markdown(
+        metric_tile("Estimated Savings", f"${stats['estimated_savings']:.4f}"), unsafe_allow_html=True
+    )
+    c4.markdown(metric_tile("Avg Latency", f"{stats['avg_latency_ms']:.0f} ms"), unsafe_allow_html=True)
 
-    col_a, col_b = st.columns(2)
+    st.markdown("<br>", unsafe_allow_html=True)
+    col_a, col_b = st.columns(2, gap="medium")
     with col_a:
-        st.subheader("Requests per Routing Tier")
-        tier_df = pd.DataFrame(
-            list(stats["requests_per_tier"].items()), columns=["Tier", "Requests"]
-        ).set_index("Tier")
-        st.bar_chart(tier_df)
+        st.markdown('<div class="mp-card-title">Requests per Routing Tier</div>', unsafe_allow_html=True)
+        tiers = list(stats["requests_per_tier"].keys())
+        counts = list(stats["requests_per_tier"].values())
+        st.plotly_chart(
+            _bar_chart(tiers, counts, COLORS["accent"]),
+            use_container_width=True,
+            config={"displayModeBar": False},
+        )
     with col_b:
-        st.subheader("Cost per Model")
-        cost_df = pd.DataFrame(
-            list(stats["cost_per_model"].items()), columns=["Model", "Cost"]
-        ).set_index("Model")
-        st.bar_chart(cost_df)
+        st.markdown('<div class="mp-card-title">Cost per Model</div>', unsafe_allow_html=True)
+        models = list(stats["cost_per_model"].keys())
+        costs = list(stats["cost_per_model"].values())
+        st.plotly_chart(
+            _bar_chart(models, costs, COLORS["tier_standard"]),
+            use_container_width=True,
+            config={"displayModeBar": False},
+        )
 
 
 def render_settings() -> None:
-    st.title("⚙️ Settings")
+    page_header("Settings", "Current routing configuration — read-only.")
     st.caption(
         "Routing tiers and pricing are defined in config/routing.yaml and "
-        "config/pricing.yaml, not editable from this UI — changing routing "
-        "policy is a config edit, not a runtime write, to avoid file-write "
-        "race conditions for what is otherwise a read-only view."
+        "config/pricing.yaml. Changing routing policy is a config edit, not "
+        "a runtime write, to avoid file-write race conditions for what is "
+        "otherwise a read-only view."
     )
+
     data = _get("/models")
     if data is None:
         return
 
-    st.subheader("Classifier")
-    st.json(data["classifier"])
+    st.markdown("<br>", unsafe_allow_html=True)
+    classifier = data["classifier"]
+    thresholds = data["confidence_thresholds"]
+    rows = "".join(
+        [
+            kv_row("Classifier Provider", classifier["provider"]),
+            kv_row("Classifier Model", classifier["model"]),
+            kv_row("Max Output Tokens", str(classifier["max_output_tokens"])),
+            kv_row("High Confidence Threshold", f"{thresholds['high']:.2f}"),
+            kv_row("Low Confidence Threshold", f"{thresholds['low']:.2f}"),
+            kv_row("Escalate on Low Confidence", str(thresholds["escalate_on_low_confidence"])),
+        ]
+    )
+    st.markdown(
+        f'<div class="mp-card"><div class="mp-card-title">Classifier</div>{rows}</div>',
+        unsafe_allow_html=True,
+    )
 
-    st.subheader("Confidence Thresholds")
-    st.json(data["confidence_thresholds"])
-
-    st.subheader("Routing Tiers")
-    for tier_name, tier in data["tiers"].items():
-        with st.expander(tier_name.upper(), expanded=True):
-            st.write(f"**Provider:** {tier['provider']}  ·  **Model:** {tier['model']}")
-            st.write(
-                f"**Pricing:** ${tier['input_per_million']}/1M input tokens, "
-                f"${tier['output_per_million']}/1M output tokens"
+    st.markdown('<div class="mp-card-title" style="margin-top:24px;">Routing Tiers</div>', unsafe_allow_html=True)
+    cols = st.columns(3, gap="medium")
+    for col, (tier_name, tier) in zip(cols, data["tiers"].items()):
+        rows = "".join(
+            [
+                kv_row("Provider", tier["provider"]),
+                kv_row("Model", tier["model"]),
+                kv_row("Max Output Tokens", str(tier["max_output_tokens"])),
+                kv_row("Input $/1M", f"${tier['input_per_million']}"),
+                kv_row("Output $/1M", f"${tier['output_per_million']}"),
+            ]
+        )
+        reasons = "".join(f"<li style='margin-bottom:4px;'>{r}</li>" for r in tier["reasons"])
+        with col:
+            st.markdown(
+                f'<div class="mp-card">'
+                f'<div style="margin-bottom:12px;">{tier_badge(tier_name.upper())}</div>'
+                f"{rows}"
+                f'<div style="margin-top:12px; font-size:13px; color:{COLORS["text_muted"]};">'
+                f'<ul style="padding-left:18px; margin:0;">{reasons}</ul></div>'
+                f"</div>",
+                unsafe_allow_html=True,
             )
-            st.write(f"**Max output tokens:** {tier['max_output_tokens']}")
-            st.write("**Reasons this tier is chosen:**")
-            for reason in tier["reasons"]:
-                st.write(f"- {reason}")
 
 
 PAGES = {
@@ -165,6 +293,14 @@ PAGES = {
     "Settings": render_settings,
 }
 
-st.sidebar.title("ModelPilot")
-selected_page = st.sidebar.radio("Navigate", list(PAGES.keys()))
+with st.sidebar:
+    st.markdown(
+        '<div style="font-size:19px; font-weight:600; letter-spacing:-0.01em; '
+        'margin-bottom:2px;">ModelPilot</div>'
+        f'<div style="font-size:12.5px; color:{COLORS["text_muted"]}; margin-bottom:24px;">'
+        "Multi-LLM Routing</div>",
+        unsafe_allow_html=True,
+    )
+    selected_page = st.radio("Navigate", list(PAGES.keys()), label_visibility="collapsed")
+
 PAGES[selected_page]()
