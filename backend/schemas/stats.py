@@ -10,3 +10,5 @@ class StatsResponse(BaseModel):
     requests_per_tier: dict[str, int]
     cost_per_model: dict[str, float]
     estimated_savings: float
+    quality_verified_count: int
+    quality_pass_rate: float | None

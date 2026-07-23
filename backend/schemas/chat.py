@@ -37,4 +37,7 @@ class ChatResponse(BaseModel):
     total_cost: float
     total_latency_ms: float
 
+    quality_passed: bool | None
+    quality_reason: str | None
+
     timestamp: datetime

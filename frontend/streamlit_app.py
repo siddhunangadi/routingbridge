@@ -15,7 +15,7 @@ import pandas as pd
 import plotly.graph_objects as go
 import streamlit as st
 
-from theme import COLORS, inject_theme, kv_row, metric_tile, page_header, tier_badge
+from theme import COLORS, inject_theme, kv_row, metric_tile, page_header, quality_badge, tier_badge
 
 BACKEND_URL = os.getenv("BACKEND_URL", "http://localhost:8000")
 
@@ -154,6 +154,14 @@ def render_chat() -> None:
                 unsafe_allow_html=True,
             )
 
+        quality_rows = kv_row("Verdict", quality_badge(data["quality_passed"]))
+        if data["quality_reason"]:
+            quality_rows += kv_row("Reason", data["quality_reason"])
+        st.markdown(
+            f'<div class="mp-card"><div class="mp-card-title">Quality Check</div>{quality_rows}</div>',
+            unsafe_allow_html=True,
+        )
+
         with st.expander("Why this model was selected"):
             for reason in data["routing_reason"]:
                 st.write(f"— {reason}")
@@ -242,13 +250,20 @@ def render_analytics() -> None:
         st.markdown('<div class="mp-empty">No requests yet — try the Chat page.</div>', unsafe_allow_html=True)
         return
 
-    c1, c2, c3, c4 = st.columns(4, gap="small")
+    c1, c2, c3, c4, c5 = st.columns(5, gap="small")
     c1.markdown(metric_tile("Total Requests", str(stats["total_requests"])), unsafe_allow_html=True)
     c2.markdown(metric_tile("Total Cost", f"${stats['total_cost']:.4f}"), unsafe_allow_html=True)
     c3.markdown(
         metric_tile("Estimated Savings", f"${stats['estimated_savings']:.4f}"), unsafe_allow_html=True
     )
     c4.markdown(metric_tile("Avg Latency", f"{stats['avg_latency_ms']:.0f} ms"), unsafe_allow_html=True)
+    quality_label = (
+        f"{stats['quality_pass_rate'] * 100:.0f}%" if stats["quality_pass_rate"] is not None else "—"
+    )
+    c5.markdown(
+        metric_tile(f"Quality Pass Rate ({stats['quality_verified_count']} checked)", quality_label),
+        unsafe_allow_html=True,
+    )
 
     st.markdown("<br>", unsafe_allow_html=True)
     col_a, col_b = st.columns(2, gap="medium")

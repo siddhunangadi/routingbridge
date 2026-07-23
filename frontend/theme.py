@@ -252,6 +252,17 @@ def tier_badge(tier: str) -> str:
     return f'<span class="mp-badge" style="background:{color}">{tier}</span>'
 
 
+def quality_badge(passed: bool | None) -> str:
+    """passed is None for ADVANCED-tier answers, which are never verified —
+    there's no cheaper tier's work to judge, so "not verified" isn't a gap,
+    it's the correct outcome for that case."""
+    if passed is None:
+        return f'<span class="mp-badge" style="background:{COLORS["text_muted"]}">NOT VERIFIED</span>'
+    if passed:
+        return f'<span class="mp-badge" style="background:{COLORS["tier_basic"]}">PASSED</span>'
+    return f'<span class="mp-badge" style="background:{COLORS["tier_advanced"]}">FAILED</span>'
+
+
 def kv_row(label: str, value: str) -> str:
     return (
         f'<div class="mp-kv-row">'

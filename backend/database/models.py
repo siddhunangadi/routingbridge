@@ -48,3 +48,7 @@ class RequestLog(Base):
     # totals
     total_cost: Mapped[float] = mapped_column(Float)
     total_latency_ms: Mapped[float] = mapped_column(Float)
+
+    # quality verification (only run for BASIC/STANDARD — null means "not verified")
+    quality_passed: Mapped[bool | None] = mapped_column(Boolean, nullable=True)
+    quality_reason: Mapped[str | None] = mapped_column(String, nullable=True)

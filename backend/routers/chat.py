@@ -17,9 +17,11 @@ from sqlalchemy.orm import Session
 from backend.database.db import get_db
 from backend.database.models import RequestLog
 from backend.schemas.chat import ChatRequest, ChatResponse
+from backend.schemas.routing_decision import RoutingTier
 from backend.services.classifier_service import ClassifierService, get_classifier_service
 from backend.services.cost_estimator import estimate_cost
 from backend.services.providers.factory import get_provider
+from backend.services.quality_verifier import QualityVerifier, get_quality_verifier
 from backend.services.routing_engine import RoutingEngine, get_routing_engine
 from backend.utils.config import Settings, get_settings
 
@@ -34,6 +36,7 @@ def chat(
     settings: Settings = Depends(get_settings),
     classifier: ClassifierService = Depends(get_classifier_service),
     engine: RoutingEngine = Depends(get_routing_engine),
+    quality_verifier: QualityVerifier = Depends(get_quality_verifier),
 ) -> ChatResponse:
     prompt = body.prompt.strip()
     start = time.perf_counter()
@@ -65,6 +68,13 @@ def chat(
     request_id = str(uuid.uuid4())
     timestamp = datetime.now(timezone.utc)
 
+    # Only worth judging a cheaper tier's answer — the ADVANCED tier already
+    # got the most capable model available, so there's nothing to compare it
+    # against, and verifying it would just be extra cost for no signal.
+    quality_verdict = None
+    if routing_result.tier != RoutingTier.ADVANCED:
+        quality_verdict = quality_verifier.verify(prompt, provider_response.text)
+
     db.add(
         RequestLog(
             id=request_id,
@@ -89,6 +99,8 @@ def chat(
             model_cost=model_cost,
             total_cost=total_cost,
             total_latency_ms=total_latency_ms,
+            quality_passed=quality_verdict.passed if quality_verdict else None,
+            quality_reason=quality_verdict.reason if quality_verdict else None,
         )
     )
     db.commit()
@@ -114,5 +126,7 @@ def chat(
         model_cost=model_cost,
         total_cost=total_cost,
         total_latency_ms=total_latency_ms,
+        quality_passed=quality_verdict.passed if quality_verdict else None,
+        quality_reason=quality_verdict.reason if quality_verdict else None,
         timestamp=timestamp,
     )

@@ -32,6 +32,8 @@ def get_stats(db: Session = Depends(get_db)) -> StatsResponse:
             requests_per_tier={},
             cost_per_model={},
             estimated_savings=0.0,
+            quality_verified_count=0,
+            quality_pass_rate=None,
         )
 
     total_cost = db.query(func.sum(RequestLog.total_cost)).scalar() or 0.0
@@ -58,6 +60,24 @@ def get_stats(db: Session = Depends(get_db)) -> StatsResponse:
         if model != advanced_model
     )
 
+    # quality_passed is NULL for ADVANCED-tier rows (never verified) — only
+    # count rows where verification actually ran.
+    quality_verified_count = (
+        db.query(func.count(RequestLog.id))
+        .filter(RequestLog.quality_passed.isnot(None))
+        .scalar()
+        or 0
+    )
+    quality_pass_rate = None
+    if quality_verified_count > 0:
+        passed_count = (
+            db.query(func.count(RequestLog.id))
+            .filter(RequestLog.quality_passed.is_(True))
+            .scalar()
+            or 0
+        )
+        quality_pass_rate = round(passed_count / quality_verified_count, 4)
+
     return StatsResponse(
         total_requests=total_requests,
         total_cost=round(total_cost, 6),
@@ -65,4 +85,6 @@ def get_stats(db: Session = Depends(get_db)) -> StatsResponse:
         requests_per_tier=requests_per_tier,
         cost_per_model={k: round(v, 6) for k, v in cost_per_model.items()},
         estimated_savings=round(estimated_savings, 6),
+        quality_verified_count=quality_verified_count,
+        quality_pass_rate=quality_pass_rate,
     )
