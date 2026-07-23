@@ -1,4 +1,4 @@
-"""ModelPilot FastAPI application entrypoint."""
+"""RoutingBridge FastAPI application entrypoint."""
 
 import logging
 
@@ -14,7 +14,7 @@ configure_logging(settings.log_level)
 logger = logging.getLogger(__name__)
 
 app = FastAPI(
-    title="ModelPilot",
+    title="RoutingBridge",
     description="Intelligent Multi-LLM Routing & Cost Optimization Platform",
     version="0.1.0",
 )
@@ -34,4 +34,4 @@ def health() -> dict:
 @app.on_event("startup")
 def on_startup() -> None:
     Base.metadata.create_all(bind=engine)
-    logger.info("ModelPilot API starting up")
+    logger.info("RoutingBridge API starting up")

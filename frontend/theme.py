@@ -1,4 +1,4 @@
-"""Design tokens and CSS injection for the ModelPilot UI.
+"""Design tokens and CSS injection for the RoutingBridge UI.
 
 Split out from streamlit_app.py purely because the CSS block is long and
 this keeps page logic readable — same "one clear responsibility per file"

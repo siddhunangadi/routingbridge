@@ -1,4 +1,4 @@
-# ModelPilot — Intelligent Multi-LLM Routing & Cost Optimization Platform
+# RoutingBridge — Intelligent Multi-LLM Routing & Cost Optimization Platform
 
 Routes every prompt to the cheapest model capable of handling it well,
 instead of always calling the most expensive one. A small router model
@@ -14,7 +14,7 @@ prompts don't need that model. "What's 2+2" and "design a distributed
 consensus protocol" cost the same if you always call GPT-4-class models,
 even though the first could be answered by a model 10-50x cheaper.
 
-ModelPilot is a small, focused system that solves exactly this: classify
+RoutingBridge is a small, focused system that solves exactly this: classify
 prompt difficulty, route to the right tier, and prove the savings with
 real numbers.
 

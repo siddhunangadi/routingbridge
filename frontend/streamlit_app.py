@@ -1,4 +1,4 @@
-"""ModelPilot Streamlit UI.
+"""RoutingBridge Streamlit UI.
 
 One file, sidebar radio for navigation between four pages. No multipage
 framework, no page-router abstraction — for four screens that each just
@@ -18,7 +18,7 @@ from theme import COLORS, inject_theme, kv_row, metric_tile, page_header, tier_b
 
 BACKEND_URL = os.getenv("BACKEND_URL", "http://localhost:8000")
 
-st.set_page_config(page_title="ModelPilot", page_icon=None, layout="wide")
+st.set_page_config(page_title="RoutingBridge", page_icon=None, layout="wide")
 inject_theme()
 
 CHART_LAYOUT = dict(
@@ -191,7 +191,7 @@ def _bar_chart(labels: list[str], values: list[float], color: str) -> go.Figure:
 
 
 def render_analytics() -> None:
-    page_header("Analytics", "How ModelPilot is routing traffic and what it costs.")
+    page_header("Analytics", "How RoutingBridge is routing traffic and what it costs.")
 
     stats = _get("/stats")
     if stats is None:
@@ -296,7 +296,7 @@ PAGES = {
 with st.sidebar:
     st.markdown(
         '<div style="font-size:19px; font-weight:600; letter-spacing:-0.01em; '
-        'margin-bottom:2px;">ModelPilot</div>'
+        'margin-bottom:2px;">RoutingBridge</div>'
         f'<div style="font-size:12.5px; color:{COLORS["text_muted"]}; margin-bottom:24px;">'
         "Multi-LLM Routing</div>",
         unsafe_allow_html=True,
