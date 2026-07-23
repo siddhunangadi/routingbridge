@@ -43,7 +43,9 @@ def chat(
 
     provider = get_provider(routing_result.provider, settings)
     try:
-        provider_response = provider.generate(prompt, routing_result.model)
+        provider_response = provider.generate(
+            prompt, routing_result.model, max_tokens=routing_result.max_output_tokens
+        )
     except Exception as exc:
         logger.error(
             "Provider call failed (provider=%s, model=%s): %s",

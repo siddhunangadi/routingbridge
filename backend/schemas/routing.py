@@ -8,6 +8,7 @@ from backend.schemas.routing_decision import RoutingTier
 class RoutingResult(BaseModel):
     provider: str
     model: str
+    max_output_tokens: int
     tier: RoutingTier
     original_tier: RoutingTier
     escalated: bool

@@ -50,6 +50,7 @@ class RoutingEngine:
         return RoutingResult(
             provider=tier_config["provider"],
             model=tier_config["model"],
+            max_output_tokens=tier_config["max_output_tokens"],
             tier=tier,
             original_tier=decision.routing_tier,
             escalated=escalated,

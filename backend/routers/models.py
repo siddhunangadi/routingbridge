@@ -26,6 +26,7 @@ def get_models() -> dict:
         tiers[tier_name] = {
             "provider": tier_cfg["provider"],
             "model": tier_cfg["model"],
+            "max_output_tokens": tier_cfg["max_output_tokens"],
             "reasons": tier_cfg["reasons"],
             "input_per_million": pricing.get("input_per_million"),
             "output_per_million": pricing.get("output_per_million"),

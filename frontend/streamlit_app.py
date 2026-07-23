@@ -152,6 +152,7 @@ def render_settings() -> None:
                 f"**Pricing:** ${tier['input_per_million']}/1M input tokens, "
                 f"${tier['output_per_million']}/1M output tokens"
             )
+            st.write(f"**Max output tokens:** {tier['max_output_tokens']}")
             st.write("**Reasons this tier is chosen:**")
             for reason in tier["reasons"]:
                 st.write(f"- {reason}")
