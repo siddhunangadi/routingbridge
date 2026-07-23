@@ -1,8 +1,10 @@
-# Routing configuration: which model handles each complexity tier, and why.
-# Kept out of Python so routing policy can change without a code deploy —
-# a real interview talking point ("config-driven architecture").
+# Routing configuration: which provider/model handles each complexity tier,
+# and why. Kept out of Python so routing policy can change without a code
+# deploy. Only two providers exist: "google" (native Gemini SDK) and
+# "openrouter" (single gateway to Mistral/DeepSeek/Qwen/Llama/etc).
 
 classifier:
+  provider: google
   model: gemini-2.5-flash
   max_output_tokens: 100
 
@@ -10,23 +12,26 @@ confidence_thresholds:
   high: 0.9
   low: 0.6
   # low-confidence classifications get escalated to the next tier up
-  # (Easy -> Medium, Medium -> Hard) by the routing engine, not the classifier.
+  # (easy -> medium, medium -> hard) by the routing engine, not the classifier.
   escalate_on_low_confidence: true
 
 tiers:
   easy:
+    provider: google
     model: gemini-2.5-flash
     reasons:
       - "Simple, short prompt"
       - "Low reasoning complexity"
       - "Fast, cheap model is sufficient"
   medium:
-    model: gpt-4.1-mini
+    provider: openrouter
+    model: mistralai/mistral-small-3.2-24b-instruct
     reasons:
       - "Requires moderate multi-step reasoning"
       - "Structured but not deeply technical"
   hard:
-    model: claude-3-5-sonnet
+    provider: openrouter
+    model: deepseek/deepseek-r1
     reasons:
       - "Complex, multi-step reasoning required"
       - "Long or nuanced prompt"

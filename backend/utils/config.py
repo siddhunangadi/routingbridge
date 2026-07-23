@@ -16,8 +16,7 @@ class Settings(BaseSettings):
     model_config = SettingsConfigDict(env_file=".env", extra="ignore")
 
     google_api_key: str = ""
-    openai_api_key: str = ""
-    anthropic_api_key: str = ""
+    openrouter_api_key: str = ""
 
     database_url: str = "sqlite:///./modelpilot.db"
     log_level: str = "INFO"
