@@ -9,3 +9,5 @@ python-dotenv==1.0.1
 tiktoken==0.8.0
 plotly==5.24.1
 pandas==2.2.3
+pyyaml==6.0.2
+google-generativeai==0.8.3

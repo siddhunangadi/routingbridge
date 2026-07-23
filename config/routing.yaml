@@ -1,0 +1,33 @@
+# Routing configuration: which model handles each complexity tier, and why.
+# Kept out of Python so routing policy can change without a code deploy —
+# a real interview talking point ("config-driven architecture").
+
+classifier:
+  model: gemini-2.5-flash
+  max_output_tokens: 100
+
+confidence_thresholds:
+  high: 0.9
+  low: 0.6
+  # low-confidence classifications get escalated to the next tier up
+  # (Easy -> Medium, Medium -> Hard) by the routing engine, not the classifier.
+  escalate_on_low_confidence: true
+
+tiers:
+  easy:
+    model: gemini-2.5-flash
+    reasons:
+      - "Simple, short prompt"
+      - "Low reasoning complexity"
+      - "Fast, cheap model is sufficient"
+  medium:
+    model: gpt-4.1-mini
+    reasons:
+      - "Requires moderate multi-step reasoning"
+      - "Structured but not deeply technical"
+  hard:
+    model: claude-3-5-sonnet
+    reasons:
+      - "Complex, multi-step reasoning required"
+      - "Long or nuanced prompt"
+      - "Higher-capability model justified despite cost"
