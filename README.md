@@ -30,6 +30,15 @@ choice it made and why. It also reviews its own history over time and
 suggests improvements — but never applies one without a person signing
 off first.
 
+```mermaid
+flowchart LR
+    Q[Your question] --> R{How hard is it?}
+    R -->|Easy| C[Cheap, fast AI]
+    R -->|Hard| E[Stronger, pricier AI]
+    C --> A[Answer + a record of<br/>which AI answered and why]
+    E --> A
+```
+
 ## Overview
 
 ### Problem statement
