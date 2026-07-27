@@ -9,8 +9,8 @@ hit that code path. Failing fast at boot turns that into an immediate,
 readable startup error instead.
 
 `validate_startup_config()` collects every problem it finds and raises
-once with the full list — a fresher hitting one broken tier out of three
-shouldn't have to fix-and-restart three times to see the other two.
+once with the full list — hitting one broken tier out of three shouldn't
+require a fix-and-restart cycle per issue to see the other two.
 """
 
 from backend.utils.yaml_config import load_pricing_config, load_routing_config

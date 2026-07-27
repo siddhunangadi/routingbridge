@@ -4,8 +4,8 @@ pricing and thresholds, straight from routing.yaml/pricing.yaml.
 Read-only by design: editing thresholds means editing the YAML file and
 restarting, not a PUT endpoint that writes config at runtime. That would
 mean detecting file writes, race conditions between concurrent edits, and
-cache invalidation for a fresher project's Settings page — real complexity
-for a feature whose entire job is "show me what's configured."
+cache invalidation for a page whose entire job is "show me what's
+configured" — real complexity with no corresponding benefit here.
 """
 
 from fastapi import APIRouter

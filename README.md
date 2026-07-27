@@ -107,11 +107,24 @@ made, except a human editing `routing.yaml`.** See
 
 ## Screenshots
 
-> _Streamlit UI: chat, history, and stats. (Analytics/decision/agent
-> endpoints are currently API-only — see [Roadmap](#future-roadmap).)_
+**Chat** — routes a prompt, shows the routing decision, cost/latency, and quality verdict:
 
-`docs/screenshots/chat.png` · `docs/screenshots/history.png` · `docs/screenshots/stats.png`
-*(placeholders — add real screenshots here)*
+![Chat](docs/screenshots/chat.png)
+
+**History** — every routed request, searchable and filterable by tier:
+
+![History](docs/screenshots/history.png)
+
+**Analytics** — aggregate cost, savings, latency, and quality metrics:
+
+![Analytics](docs/screenshots/analytics.png)
+
+**Settings** — the active routing configuration, read-only:
+
+![Settings](docs/screenshots/settings.png)
+
+(Analytics/decision/agent *endpoints* are richer than what the UI currently
+surfaces — see [Roadmap](#future-roadmap).)
 
 ## API overview
 
@@ -170,7 +183,6 @@ render.yaml                    # Render Blueprint: one web service
 tests/                       # 57 tests, no network calls required
 docs/
   architecture.md             # diagrams + data model, current state
-  interview-guide.md           # why each design decision was made
   pr1-4 *.md                   # per-PR design rationale, written as each was built
 ```
 
@@ -428,8 +440,7 @@ following are fixed and re-verified live, not just covered by unit tests:
 
 ## Design decisions
 
-The short version of decisions explained at length in `docs/pr*.md` and
-`docs/interview-guide.md`:
+The short version of decisions explained at length in `docs/pr*.md`:
 
 - **Normalized schema over one flat log table** — lets analytics/agent
   queries aggregate by any dimension (task type, provider, tier)

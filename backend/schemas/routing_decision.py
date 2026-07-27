@@ -1,9 +1,9 @@
 """Pydantic schemas for the classifier's routing decision.
 
-Renamed from "classification" to "routing decision" deliberately: the
+Named "routing decision" rather than "classification" deliberately: the
 router model isn't measuring some objective property of the prompt, it's
 making a judgment call about which tier should handle it. That framing
-matches what the system actually does and reads better in an interview.
+matches what the system actually does.
 
 Two layers on purpose:
   - `RoutingDecision` is exactly the JSON we ask the LLM to return.

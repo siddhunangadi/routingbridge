@@ -2,8 +2,8 @@
 model, estimate cost, persist, respond.
 
 This function is intentionally a straight line, not a pipeline abstraction:
-classify -> route -> generate -> cost -> save -> return. A fresher should
-be able to read it top to bottom and narrate every step in an interview.
+classify -> route -> generate -> cost -> save -> return. Every step should
+be readable top to bottom without jumping through indirection.
 
 Failure handling: every exit past classification carries a known
 `request_id` (and, once routing has run, a known provider/model), so any

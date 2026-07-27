@@ -131,9 +131,9 @@ instead of miscounted as "failed" — the same semantics `/stats`'
   trigger, matching the "explicit trigger only" decision made during
   design.
 - No pagination on `/analytics/patterns` or `/analytics/recommendations`
-  — at this project's scale (a portfolio-sized dataset, not millions of
-  rows) an unpaginated list is the honest, simple choice; add it if a
-  real deployment's row count ever makes it necessary.
+  — at current scale (thousands, not millions, of rows) an unpaginated
+  list is the honest, simple choice; add it if a deployment's row count
+  ever makes it necessary.
 - `task_subcategory` is carried through every query and table but stays
   `None` everywhere — the classifier doesn't populate it yet. Extending
   the classifier is a separate, explicit concern for whenever it's
