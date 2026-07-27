@@ -21,8 +21,16 @@ class ProviderResponse(BaseModel):
 
 
 class LLMProvider(ABC):
-    """Minimal interface: given a model name and a prompt, return text + token counts."""
+    """Minimal interface: given a model name and a prompt, return text + token counts.
+
+    `response_format="json_object"` requests structured JSON output from the
+    model itself (rather than leaving JSON-vs-prose entirely up to prompt
+    wording) — used by the classifier and quality verifier, which must parse
+    the response as JSON. Regular chat answers pass no response_format.
+    """
 
     @abstractmethod
-    def generate(self, prompt: str, model: str, max_tokens: int = 1024) -> ProviderResponse:
+    def generate(
+        self, prompt: str, model: str, max_tokens: int = 1024, response_format: str | None = None
+    ) -> ProviderResponse:
         raise NotImplementedError

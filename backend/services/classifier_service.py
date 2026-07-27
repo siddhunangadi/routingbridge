@@ -27,6 +27,21 @@ from backend.utils.yaml_config import load_routing_config
 logger = logging.getLogger(__name__)
 
 
+def strip_json_fence(text: str) -> str:
+    """Defensive belt-and-suspenders: `response_format="json_object"` is what
+    actually fixes structured output (verified against the real OpenRouter
+    API — Mistral otherwise wraps its reply in a ```json fence and breaks
+    json.loads() on every call), but this strips a fence anyway in case a
+    future routing.yaml model swap doesn't honor response_format reliably.
+    """
+    stripped = text.strip()
+    if stripped.startswith("```"):
+        stripped = stripped.strip("`")
+        if stripped.lower().startswith("json"):
+            stripped = stripped[4:]
+    return stripped.strip()
+
+
 def _build_classifier_prompt(user_prompt: str) -> str:
     """Kept deliberately tiny: every extra token here is paid on every request."""
     return (
@@ -89,11 +104,14 @@ class ClassifierService:
 
     def _classify_with_llm(self, prompt: str) -> tuple[RoutingDecision, int, int]:
         response = self._provider.generate(
-            _build_classifier_prompt(prompt), self._model_name, self._max_output_tokens
+            _build_classifier_prompt(prompt),
+            self._model_name,
+            self._max_output_tokens,
+            response_format="json_object",
         )
 
         try:
-            data = json.loads(response.text)
+            data = json.loads(strip_json_fence(response.text))
             decision = RoutingDecision.model_validate(data)
         except (json.JSONDecodeError, ValidationError) as exc:
             raise ValueError(f"Classifier returned invalid structured output: {exc}") from exc

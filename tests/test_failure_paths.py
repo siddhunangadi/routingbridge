@@ -68,12 +68,16 @@ class _RaisingProvider:
     def __init__(self, exc: Exception):
         self._exc = exc
 
-    def generate(self, prompt: str, model: str, max_tokens: int = 1024) -> ProviderResponse:
+    def generate(
+        self, prompt: str, model: str, max_tokens: int = 1024, response_format: str | None = None
+    ) -> ProviderResponse:
         raise self._exc
 
 
 class _WorkingProvider:
-    def generate(self, prompt: str, model: str, max_tokens: int = 1024) -> ProviderResponse:
+    def generate(
+        self, prompt: str, model: str, max_tokens: int = 1024, response_format: str | None = None
+    ) -> ProviderResponse:
         return ProviderResponse(text="4", input_tokens=8, output_tokens=2)
 
 

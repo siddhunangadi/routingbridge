@@ -10,12 +10,15 @@ class GeminiProvider(LLMProvider):
     def __init__(self, api_key: str):
         genai.configure(api_key=api_key)
 
-    def generate(self, prompt: str, model: str, max_tokens: int = 1024) -> ProviderResponse:
+    def generate(
+        self, prompt: str, model: str, max_tokens: int = 1024, response_format: str | None = None
+    ) -> ProviderResponse:
         client = genai.GenerativeModel(model)
-        response = client.generate_content(
-            prompt,
-            generation_config=genai.types.GenerationConfig(max_output_tokens=max_tokens),
+        generation_config = genai.types.GenerationConfig(
+            max_output_tokens=max_tokens,
+            response_mime_type="application/json" if response_format == "json_object" else None,
         )
+        response = client.generate_content(prompt, generation_config=generation_config)
         usage = response.usage_metadata
         return ProviderResponse(
             text=response.text,

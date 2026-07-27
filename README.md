@@ -8,7 +8,7 @@
 
 [![Python](https://img.shields.io/badge/python-3.11%2B-blue)](requirements.txt)
 [![License](https://img.shields.io/badge/license-MIT-green)](#license)
-[![Tests](https://img.shields.io/badge/tests-53%20passing-brightgreen)](#testing)
+[![Tests](https://img.shields.io/badge/tests-57%20passing-brightgreen)](#testing)
 
 [Overview](#overview) • [Architecture](#architecture) • [Features](#features) • [API](#api-overview) • [Running locally](#running-locally) • [Deployment](#deployment) • [Design decisions](#design-decisions) • [Roadmap](#future-roadmap)
 
@@ -167,7 +167,7 @@ deploy/
   nginx.conf.template          # /api/* -> FastAPI, /* -> Streamlit
 Dockerfile                    # single image for local Docker and Render
 render.yaml                    # Render Blueprint: one web service
-tests/                       # 53 tests, no network calls required
+tests/                       # 57 tests, no network calls required
 docs/
   architecture.md             # diagrams + data model, current state
   interview-guide.md           # why each design decision was made
@@ -236,12 +236,20 @@ resolve on IPv4-only networks/containers). The password is shown once at
 project creation and isn't retrievable afterward; reset it there if lost.
 
 Schema is managed by SQLAlchemy's `Base.metadata.create_all()` —
-idempotent `CREATE TABLE IF NOT EXISTS` DDL, run automatically on app
-startup and by `scripts/bootstrap_db.py`. There's no separate migration
-framework: every table lives in `backend/database/models.py`, and that
-file is the single source of truth for the schema. Adding a column or
-table is a plain model change — the next app boot or `bootstrap_db` run
-picks it up.
+idempotent `CREATE TABLE IF NOT EXISTS` DDL, run explicitly by
+`scripts/bootstrap_db.py` only, never automatically on app startup (see
+`backend/main.py`'s `lifespan` for why: seeding is business data an app
+boot shouldn't silently write, and even idempotent DDL is a real DB
+round-trip against a remote Postgres on every boot for a schema that
+almost never changes). There's no separate migration framework: every
+table lives in `backend/database/models.py`, and that file is the single
+source of truth for the schema. Adding a column or table is a plain model
+change — the next `bootstrap_db` run picks it up.
+
+Row Level Security is enabled on every table, denying all access to the
+`anon`/`authenticated` Supabase roles by default (no permissive policies
+are defined, deliberately — see "Security" below for why that's correct
+for this app, not a placeholder for future policies).
 
 ```bash
 python -m scripts.bootstrap_db    # create tables + seed the active routing_policies row
@@ -316,7 +324,7 @@ processes share one container.
 pytest tests/ -v
 ```
 
-53 tests, all offline — LLM/provider calls are faked via dependency
+57 tests, all offline — LLM/provider calls are faked via dependency
 overrides and monkeypatching, so the suite needs no API keys and no
 network access. Coverage includes transactional persistence and
 rollback, pattern/recommendation generation and policy-version
@@ -326,7 +334,12 @@ recommendation-validation), every public endpoint's response contract,
 and (added in the PR5 hardening pass, `tests/test_failure_paths.py`)
 provider exceptions, a missing pricing.yaml entry, the heuristic
 fallback's confidence, and startup configuration validation — both the
-passing case and every failure case.
+passing case and every failure case; plus (added in the production
+stabilization pass, `tests/test_classifier_json_format.py`) that the
+OpenRouter provider actually requests `response_format="json_object"`
+for the classifier/quality verifier and omits it for regular chat calls,
+and that markdown-fence stripping survives a provider that doesn't
+honor it.
 
 ## Failure handling, audit guarantees, and startup validation
 
@@ -349,6 +362,69 @@ guarantees" and "Startup configuration validation"); short version:
   threshold, silently bumping every fallback decision one tier past what
   its own word-count logic picked. Fixed to derive from the configured
   threshold instead.
+
+## Production stabilization notes
+
+A live verification pass against the real deployed Supabase database
+surfaced issues that only show up when the app actually runs against a
+real API and a real database, not just against mocked tests. All of the
+following are fixed and re-verified live, not just covered by unit tests:
+
+- **The OpenRouter classifier and quality verifier were silently dead in
+  production.** Mistral (via OpenRouter) wraps its JSON reply in a
+  ```` ```json ```` markdown fence unless explicitly told not to;
+  `OpenRouterProvider.generate()` never requested `response_format:
+  json_object` (the Gemini path did, before the OpenRouter migration, and
+  that request was lost in the move). Every real classifier call failed
+  to parse and silently fell back to the word-count heuristic —
+  `classify_heuristically`'s graceful degradation worked exactly as
+  designed, which is precisely why nobody noticed the primary path was
+  never running. Fixed: `LLMProvider.generate()` now takes an optional
+  `response_format` parameter, requested by the classifier and quality
+  verifier only (never for regular chat answers); a defensive markdown-
+  fence strip was also added as a second line of defense. Verified live
+  against the real OpenRouter API: `task_type` is now populated with real
+  labels (`"Math"`, `"CodeGen"`, `"Q&A"`, ...), `classifier_model` no
+  longer reads `"heuristic"` on a healthy request, and `quality_results`
+  now receives real rows with real pass/fail verdicts.
+- **The History page crashed the entire Streamlit process (SIGSEGV) on
+  a clean install.** Root-caused with `PYTHONFAULTHANDLER=1` (not
+  assumed): a fresh `pip install -r requirements.txt` resolved
+  `numpy==2.4.6` against the pinned `pandas==2.2.3`, and that combination
+  segfaults inside pyarrow's internal `pandas_compat.convert_column` —
+  the exact path `st.dataframe()` uses, not the public `pa.Table.from_pandas()`
+  API (which does *not* crash, which is why an initial pandas/pyarrow
+  smoke test looked fine). Fixed by pinning `numpy==1.26.4` and
+  `pyarrow==17.0.0` — versions actually exercised together at
+  `streamlit==1.39.0`'s release. Verified on a from-scratch venv: History
+  renders correctly and survives repeated navigation.
+- **The Streamlit chat request timeout (30s) was incompatible with the
+  ADVANCED tier's real latency (~140s for DeepSeek R1).** A slow-but-alive
+  backend response was indistinguishable from a Render cold start, so the
+  UI's retry logic would silently resubmit the same prompt — a real
+  duplicate-billing risk on a paid LLM call. Fixed: the `/chat` request
+  now uses a configurable timeout (`CHAT_TIMEOUT_SECONDS`, default 180s)
+  and does not retry on a genuine timeout (cold-start placeholder pages
+  return near-instantly; a real timeout at 180s is never a cold start).
+  A spinner now covers the wait. Verified live: an ADVANCED-tier prompt
+  completes through the actual UI with exactly one upstream request, no
+  duplicate.
+- **Row Level Security was disabled on every table** in the live Supabase
+  project, exposing all prompts/responses/audit data to the `anon` role.
+  The app never uses Supabase's client SDK or the anon key anywhere — it
+  connects directly to Postgres via a `postgresql+psycopg://` URL as the
+  `postgres` role, which bypasses RLS entirely regardless of policy — so
+  RLS is now enabled on all 9 tables with **zero permissive policies**,
+  denying `anon`/`authenticated` access completely. This is the correct
+  end state for this app, not a placeholder: nothing should ever read or
+  write these tables except the backend's own direct connection. Verified
+  live: full `/chat` (write) and `/history` (read) functionality intact
+  after enabling RLS.
+- **An orphaned `alembic_version` table existed in the live database**
+  despite zero Alembic files anywhere in this repo, directly contradicting
+  this README's "no separate migration framework" claim above. Dropped —
+  it was leftover cruft from an earlier experiment, never read or written
+  by any code here.
 
 ## Design decisions
 

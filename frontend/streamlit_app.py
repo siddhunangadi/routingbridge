@@ -31,6 +31,12 @@ CHART_LAYOUT = dict(
 )
 
 
+# ADVANCED-tier requests (DeepSeek R1) measured up to ~140s in practice.
+# Configurable via env var rather than hardcoded so a slower/faster model
+# swap in routing.yaml doesn't require a code change to match.
+CHAT_TIMEOUT_SECONDS = float(os.getenv("CHAT_TIMEOUT_SECONDS", "180"))
+
+
 def _request_with_retry(
     method: str,
     path: str,
@@ -38,16 +44,25 @@ def _request_with_retry(
     json: dict | None = None,
     params: dict | None = None,
     max_wait_seconds: int = 60,
+    timeout: float = 30,
+    retry_on_timeout: bool = True,
 ) -> dict | list | None:
     """Call the backend, retrying quietly through a Render free-tier cold start.
 
     A sleeping free-tier service returns Render's own HTML error page (no
-    JSON body) while it wakes up — that's structurally different from our
-    API's own errors, which are always JSON with a "detail" field. That
+    JSON body) *almost immediately* while it wakes up — that's structurally
+    different from our API's own errors (always JSON with a "detail" field)
+    AND from a genuinely slow-but-alive backend request timing out. That
     distinction is what tells us whether to retry (platform waking up) or
-    stop and show the real error (our API rejected the request). Retrying
-    quietly for the ~30-60s a cold start takes is what lets a shared demo
-    link survive someone's first cold click instead of showing raw HTML.
+    stop and show the real error (our API rejected the request, or the
+    request itself is just slow).
+
+    `retry_on_timeout=False` (used for POST /chat) exists because retrying
+    a client-side timeout on a side-effectful call would silently re-submit
+    the same prompt to a real, paid LLM call that may still be running on
+    the server — a duplicate-billing risk, not a helpful retry. Cold-start
+    placeholder pages return fast, so a real timeout is never a cold start;
+    treating it as a hard failure instead of a retry signal is correct here.
     """
     deadline = time.time() + max_wait_seconds
     attempt = 0
@@ -57,8 +72,19 @@ def _request_with_retry(
         attempt += 1
         try:
             resp = httpx.request(
-                method, f"{BACKEND_URL}{path}", json=json, params=params, timeout=30
+                method, f"{BACKEND_URL}{path}", json=json, params=params, timeout=timeout
             )
+        except httpx.TimeoutException:
+            status_box.empty()
+            if retry_on_timeout:
+                resp = None
+            else:
+                st.error(
+                    "The request took longer than expected and was not "
+                    "completed. It was not resubmitted automatically, to "
+                    "avoid running the same prompt twice — please try again."
+                )
+                return None
         except httpx.HTTPError:
             resp = None
 
@@ -100,7 +126,20 @@ def render_chat() -> None:
     send = st.button("Send", type="primary")
 
     if send and prompt.strip():
-        data = _request_with_retry("POST", "/chat", json={"prompt": prompt})
+        # ADVANCED-tier prompts (DeepSeek R1) can take minutes — a visible
+        # spinner is what tells the user the app is still working instead
+        # of looking frozen. retry_on_timeout=False: a slow-but-alive
+        # backend request must never be silently resubmitted (see
+        # _request_with_retry's docstring) — that would risk paying for
+        # the same real LLM call twice.
+        with st.spinner("Routing and generating a response — complex prompts can take a few minutes..."):
+            data = _request_with_retry(
+                "POST",
+                "/chat",
+                json={"prompt": prompt},
+                timeout=CHAT_TIMEOUT_SECONDS,
+                retry_on_timeout=False,
+            )
         if data is None:
             return
 

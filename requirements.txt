@@ -8,6 +8,15 @@ httpx==0.27.2
 python-dotenv==1.0.1  # not imported directly; pydantic-settings requires it for env_file loading
 plotly==5.24.1
 pandas==2.2.3
+# Pinned explicitly, not left as transitive deps of pandas/streamlit: an
+# unpinned numpy resolved to 2.4.6 against pyarrow 25.0.0, and that specific
+# combination segfaults inside pyarrow's internal pandas_compat.convert_column
+# (the exact path Streamlit's st.dataframe() uses) — confirmed via
+# PYTHONFAULTHANDLER=1 native traceback, not a version-number guess. These
+# versions are the ones actually exercised together at streamlit==1.39.0's
+# release and are confirmed crash-free against the same repro.
+numpy==1.26.4
+pyarrow==17.0.0
 pyyaml==6.0.2
 google-generativeai==0.8.3
 pytest==8.3.3

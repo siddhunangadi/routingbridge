@@ -20,6 +20,7 @@ import logging
 from functools import lru_cache
 
 from backend.schemas.quality import QualityVerdict
+from backend.services.classifier_service import strip_json_fence
 from backend.services.providers.factory import get_provider
 from backend.utils.config import Settings, get_settings
 from backend.utils.yaml_config import load_routing_config
@@ -55,9 +56,12 @@ class QualityVerifier:
             return None
         try:
             result = self._provider.generate(
-                _build_verdict_prompt(prompt, response), self._model_name, 200
+                _build_verdict_prompt(prompt, response),
+                self._model_name,
+                200,
+                response_format="json_object",
             )
-            data = json.loads(result.text)
+            data = json.loads(strip_json_fence(result.text))
             return QualityVerdict.model_validate(data)
         except (Exception,) as exc:  # noqa: BLE001 - judge failure must never block the response
             logger.warning("Quality verification failed (%s); skipping", exc)

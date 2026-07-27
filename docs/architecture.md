@@ -353,3 +353,13 @@ never through it.
 | `optimization_recommendations` | `routing_learning.refresh()` only | `analytics_service`, `decision_service`, `routing_agent` |
 | `investigation_reports` | `routing_agent.investigate()` only | `investigation_service` |
 | `failed_requests` | `decision_service.record_failure()`, called from `chat.py`'s exception handlers | (audit reference; not yet queried by any endpoint — see "Future roadmap" in the README) |
+
+Row Level Security is enabled on every table above with zero permissive
+policies, denying all access to Supabase's `anon`/`authenticated` roles.
+The backend never uses those roles — it connects directly to Postgres as
+the `postgres` role via `DATABASE_URL`, which bypasses RLS entirely — so
+this is a pure exposure-closing change with no effect on app behavior.
+There is no Alembic migration framework anywhere in this repo (see
+"Schema is managed by `Base.metadata.create_all()`" in the README); an
+orphaned `alembic_version` table was found in the live database from an
+earlier, unrelated experiment and has been dropped.
