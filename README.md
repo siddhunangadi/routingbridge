@@ -1,6 +1,6 @@
 <div align="center">
 
-# 🧭 RouteIQ (RoutingBridge)
+# [RoutingBridge](https://routeiq-5rgn.onrender.com)
 
 ### An explainable, self-auditing multi-LLM routing platform.
 
@@ -9,8 +9,6 @@
 [![Python](https://img.shields.io/badge/python-3.11%2B-blue)](requirements.txt)
 [![License](https://img.shields.io/badge/license-MIT-green)](#license)
 [![Tests](https://img.shields.io/badge/tests-57%20passing-brightgreen)](#testing)
-
-**🔗 Live: [routeiq-5rgn.onrender.com](https://routeiq-5rgn.onrender.com)**
 
 [Overview](#overview) • [Architecture](#architecture) • [Features](#features) • [API](#api-overview) • [Running locally](#running-locally) • [Deployment](#deployment) • [Design decisions](#design-decisions) • [Roadmap](#future-roadmap)
 
