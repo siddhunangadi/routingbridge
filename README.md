@@ -69,19 +69,20 @@ Full diagrams (request lifecycle, routing flow, decision flow, analytics
 flow, learning flow, agent flow) live in **[`docs/architecture.md`](docs/architecture.md)**.
 The short version:
 
-```
-Prompt → Classifier → Routing Engine → Provider → Cost Estimator
-       → Quality Verifier → decision_service.record() (one transaction)
-       → { requests, routing_decisions, execution_results, quality_results }
-                                │
-                                ▼
-       routing_learning.refresh()  →  routing_patterns, optimization_recommendations
-                                │                         │
-                                ▼                         ▼
-       routing_agent.investigate() ←──────────────────────┘
-                                │
-                                ▼
-                     investigation_reports
+```mermaid
+flowchart TD
+    A[Prompt] --> B[Classifier]
+    B --> C[Routing Engine]
+    C --> D[Provider]
+    D --> E[Cost Estimator]
+    E --> F[Quality Verifier]
+    F --> G["decision_service.record()\n(one transaction)"]
+    G --> H[(requests / routing_decisions /\nexecution_results / quality_results)]
+    H --> I["routing_learning.refresh()"]
+    I --> J[(routing_patterns /\noptimization_recommendations)]
+    J --> K["routing_agent.investigate()"]
+    H --> K
+    K --> L[(investigation_reports)]
 ```
 
 One rule holds across every layer above the first line: **nothing
@@ -279,9 +280,11 @@ Runs as a **single Render Web Service** (one container, one Dockerfile)
 rather than separate frontend/backend services, so nothing sleeps
 waiting on a sibling service to wake up on Render's free tier.
 
-```
-Public URL → nginx ($PORT) ─┬─ /api/*  → FastAPI  (127.0.0.1:8000)
-                             └─ /*      → Streamlit (127.0.0.1:8501)
+```mermaid
+flowchart LR
+    U[Public URL] --> N["nginx ($PORT)"]
+    N -->|"/api/*"| F["FastAPI\n127.0.0.1:8000"]
+    N -->|"/*"| S["Streamlit\n127.0.0.1:8501"]
 ```
 
 See `Dockerfile`, `deploy/start.sh`, `deploy/nginx.conf.template`, and
