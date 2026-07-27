@@ -18,6 +18,21 @@
 
 ---
 
+## What is this, in plain English?
+
+Companies that use AI chatbots (like ChatGPT) pay for every question asked.
+A simple question ("what's 2+2?") and a hard one ("plan my company's
+five-year strategy") usually get sent to the same expensive AI model —
+that's wasteful, like hiring a lawyer to answer "what time is it?"
+
+RoutingBridge sits in front of the AI and reads each question first. Easy
+questions go to a cheap, fast AI. Hard questions go to a more expensive,
+smarter one. It also keeps a receipt for every decision — which AI
+answered, why it was picked, what it cost — so nothing is a black box.
+Over time it looks back at those receipts to spot patterns (e.g. "this AI
+has been getting worse lately") and suggests improvements, but a person
+always has to approve any change before it takes effect.
+
 ## Overview
 
 ### Problem statement
