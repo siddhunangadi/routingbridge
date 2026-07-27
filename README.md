@@ -76,10 +76,10 @@ flowchart TD
     C --> D[Provider]
     D --> E[Cost Estimator]
     E --> F[Quality Verifier]
-    F --> G["decision_service.record()\n(one transaction)"]
-    G --> H[(requests / routing_decisions /\nexecution_results / quality_results)]
+    F --> G["decision_service.record()<br/>(one transaction)"]
+    G --> H[(requests / routing_decisions /<br/>execution_results / quality_results)]
     H --> I["routing_learning.refresh()"]
-    I --> J[(routing_patterns /\noptimization_recommendations)]
+    I --> J[(routing_patterns /<br/>optimization_recommendations)]
     J --> K["routing_agent.investigate()"]
     H --> K
     K --> L[(investigation_reports)]
@@ -283,8 +283,8 @@ waiting on a sibling service to wake up on Render's free tier.
 ```mermaid
 flowchart LR
     U[Public URL] --> N["nginx ($PORT)"]
-    N -->|"/api/*"| F["FastAPI\n127.0.0.1:8000"]
-    N -->|"/*"| S["Streamlit\n127.0.0.1:8501"]
+    N -->|"/api/*"| F["FastAPI<br/>127.0.0.1:8000"]
+    N -->|"/*"| S["Streamlit<br/>127.0.0.1:8501"]
 ```
 
 See `Dockerfile`, `deploy/start.sh`, `deploy/nginx.conf.template`, and
