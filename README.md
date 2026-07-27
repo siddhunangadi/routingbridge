@@ -1,6 +1,6 @@
 <div align="center">
 
-# 🧭 RouteIQ (RoutingBridge)
+# RoutingBridge
 
 ### An explainable, self-auditing multi-LLM routing platform.
 
