@@ -20,20 +20,28 @@ timestamp and `execution_results` for cost/latency) are the single
 source of truth; `get_decision_card()` builds a DecisionCard from those
 rows on demand, plus an `optimization_recommendations` lookup for PR3's
 recommendation surface. See docs/pr3-decision-intelligence.md.
+
+`record_failure()` is the counterpart for the unhappy path: see
+docs/architecture.md's "Failure handling" section for what calls it and
+why the audit trail covers failures, not just successes.
 """
 
 import hashlib
+import logging
 from datetime import datetime
 
 from sqlalchemy.orm import Session
 
 from backend.database.models import (
     ExecutionResult,
+    FailedRequest,
     OptimizationRecommendation,
     QualityResult,
     Request,
     RoutingDecision,
 )
+
+logger = logging.getLogger(__name__)
 from backend.schemas.decision_card import DecisionCard, DecisionReason, RecommendationSummary
 from backend.schemas.quality import QualityVerdict
 from backend.schemas.routing import RoutingResult
@@ -131,6 +139,53 @@ def record(
         )
 
     db.commit()
+
+
+def record_failure(
+    db: Session,
+    *,
+    request_id: str,
+    prompt: str,
+    stage: str,
+    provider: str | None,
+    model: str | None,
+    error_message: str,
+    created_at: datetime,
+) -> None:
+    """Persist a failure audit record for a request that never reached
+    `record()` — a provider exception, a cost-estimation error (e.g. a
+    model missing from pricing.yaml), or a persistence failure in
+    `record()` itself.
+
+    Must never raise: this is called from exception handlers, and a
+    broken audit write must not mask the original failure or crash the
+    error response the caller is trying to return. If the insert itself
+    fails, it's rolled back and logged at CRITICAL — that's the one gap
+    the audit trail can have, and it's visible in logs, not silent.
+    """
+    try:
+        db.rollback()
+        db.add(
+            FailedRequest(
+                request_id=request_id,
+                prompt=prompt,
+                stage=stage,
+                provider=provider,
+                model=model,
+                error_message=error_message[:2000],
+                status="failed",
+                created_at=created_at,
+            )
+        )
+        db.commit()
+    except Exception:
+        db.rollback()
+        logger.critical(
+            "Failed to persist failure audit record for request_id=%s (stage=%s)",
+            request_id,
+            stage,
+            exc_info=True,
+        )
 
 
 def _build_reasoning_steps(decision: RoutingDecision) -> list[DecisionReason]:

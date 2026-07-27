@@ -8,7 +8,7 @@
 
 [![Python](https://img.shields.io/badge/python-3.11%2B-blue)](requirements.txt)
 [![License](https://img.shields.io/badge/license-MIT-green)](#license)
-[![Tests](https://img.shields.io/badge/tests-38%20passing-brightgreen)](#testing)
+[![Tests](https://img.shields.io/badge/tests-53%20passing-brightgreen)](#testing)
 
 [Overview](#overview) • [Architecture](#architecture) • [Features](#features) • [API](#api-overview) • [Running locally](#running-locally) • [Deployment](#deployment) • [Design decisions](#design-decisions) • [Roadmap](#future-roadmap)
 
@@ -141,7 +141,7 @@ backend/
   main.py                  # FastAPI app, lifespan, router registration
   database/
     db.py                  # engine/session setup
-    models.py               # SQLAlchemy models (all 8 tables)
+    models.py               # SQLAlchemy models (all 9 tables, incl. failed_requests)
   routers/                 # thin: validate → call service → return
   schemas/                 # Pydantic request/response contracts
   services/
@@ -167,7 +167,7 @@ deploy/
   nginx.conf.template          # /api/* -> FastAPI, /* -> Streamlit
 Dockerfile                    # single image for local Docker and Render
 render.yaml                    # Render Blueprint: one web service
-tests/                       # 38 tests, no network calls required
+tests/                       # 53 tests, no network calls required
 docs/
   architecture.md             # diagrams + data model, current state
   interview-guide.md           # why each design decision was made
@@ -316,14 +316,39 @@ processes share one container.
 pytest tests/ -v
 ```
 
-38 tests, all offline — LLM/provider calls are faked via dependency
+53 tests, all offline — LLM/provider calls are faked via dependency
 overrides and monkeypatching, so the suite needs no API keys and no
 network access. Coverage includes transactional persistence and
 rollback, pattern/recommendation generation and policy-version
 isolation, DecisionCard reconstruction and recommendation matching, the
 full investigation pipeline (degradation/anomaly/policy-comparison/
-recommendation-validation), and every public endpoint's response
-contract.
+recommendation-validation), every public endpoint's response contract,
+and (added in the PR5 hardening pass, `tests/test_failure_paths.py`)
+provider exceptions, a missing pricing.yaml entry, the heuristic
+fallback's confidence, and startup configuration validation — both the
+passing case and every failure case.
+
+## Failure handling, audit guarantees, and startup validation
+
+Full detail lives in `docs/architecture.md` ("Failure handling & audit
+guarantees" and "Startup configuration validation"); short version:
+
+- **Every request gets an audit record, including failures.** A provider
+  exception, a model missing from `pricing.yaml`, or a persistence error
+  each write a `failed_requests` row (`request_id`, `stage`,
+  `provider`/`model` if known, `error_message`, `status`, `created_at`)
+  before the error response goes out — a failed request used to simply
+  vanish with no trace anywhere.
+- **Configuration is validated at startup, not discovered at request
+  time.** `validate_startup_config()` runs before the app serves traffic
+  and fails fast with every problem listed at once if `routing.yaml`
+  references a provider `providers/factory.py` doesn't implement, or a
+  model `pricing.yaml` doesn't price, or thresholds that don't make sense.
+- **The heuristic fallback no longer force-escalates.** Its confidence
+  used to be a hardcoded value that sat below the default escalation
+  threshold, silently bumping every fallback decision one tier past what
+  its own word-count logic picked. Fixed to derive from the configured
+  threshold instead.
 
 ## Design decisions
 
@@ -336,6 +361,10 @@ The short version of decisions explained at length in `docs/pr*.md` and
 - **Transactional persistence, no BackgroundTasks** — a request's full
   decision record (all four tables) either exists completely or not at
   all; audit integrity is a correctness requirement, not best-effort.
+- **Failures are audited too, in a separate table** — a provider
+  exception, a pricing-config gap, or a persistence error each write a
+  `failed_requests` row instead of vanishing with no trace; see "Failure
+  handling, audit guarantees, and startup validation" above.
 - **DecisionCard reconstructed on read, not stored as JSON** — the
   relational columns are the single source of truth; storing a JSON copy
   alongside them would duplicate the same facts with no independent

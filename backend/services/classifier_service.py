@@ -67,7 +67,7 @@ class ClassifierService:
 
         try:
             if not self._client_ready:
-                raise RuntimeError("GOOGLE_API_KEY not configured")
+                raise RuntimeError(f"{self._provider_name}_api_key not configured")
             decision, input_tokens, output_tokens = self._classify_with_llm(prompt)
         except (Exception,) as exc:  # noqa: BLE001 - any failure here must degrade, not crash
             logger.warning("Classifier LLM call failed (%s); using heuristic fallback", exc)

@@ -101,6 +101,89 @@ sequenceDiagram
     Chat-->>User: ChatResponse
 ```
 
+## Failure handling & audit guarantees (PR5 hardening)
+
+Every table `record()` writes (`requests`, `routing_decisions`,
+`execution_results`, `quality_results`) has NOT NULL columns that only a
+*successful* request produces — a provider's response text, its token
+counts, an estimated cost. That's correct for describing successes, but
+before this hardening pass it had a silent failure mode: if the provider
+call raised, `chat.py` returned a 502 and `record()` was simply never
+called. The request vanished — no row anywhere said it had ever happened.
+That directly contradicted the project's own audit-integrity principle
+(see "Governance" below): an audit trail with a request-shaped hole in it
+isn't one.
+
+`failed_requests` closes that hole. It's a separate table, not a
+relaxation of the four success tables' constraints, because a failure and
+a success genuinely have different shapes: a failure has a `stage` and an
+`error_message` and, depending on how far it got, maybe no
+provider/model; forcing that into `execution_results`' NOT NULL
+`estimated_cost`/`latency_ms` columns would mean inventing placeholder
+values for data that was never produced.
+
+```mermaid
+sequenceDiagram
+    participant User
+    participant Chat as chat.py
+    participant Provider as LLMProvider
+    participant Decision as decision_service
+
+    User->>Chat: POST /chat {prompt}
+    Note over Chat: classify + route (in-process,<br/>no external call to fail)
+    Chat->>Provider: generate(prompt, model)
+    alt provider raises
+        Provider--xChat: exception
+        Chat->>Decision: record_failure(stage="provider_call")
+        Chat-->>User: 502
+    else cost estimation raises<br/>(model missing from pricing.yaml)
+        Chat->>Chat: estimate_cost() raises KeyError
+        Chat->>Decision: record_failure(stage="cost_estimation")
+        Chat-->>User: 502
+    else decision_service.record() raises<br/>(e.g. a DB error)
+        Chat->>Decision: record(...) raises
+        Chat->>Decision: record_failure(stage="persistence")
+        Chat-->>User: 500
+    else success
+        Chat->>Decision: record(...)
+        Chat-->>User: 200 ChatResponse
+    end
+```
+
+Three failure stages are covered, each persisting a `failed_requests` row
+with `request_id`, `prompt`, `stage`, `provider`/`model` (whatever was
+already known by that point), `error_message`, `status="failed"`, and
+`created_at`, before the HTTPException propagates:
+
+- **`provider_call`** — the provider adapter (Gemini or OpenRouter) raised:
+  timeout, connection error, rate limit, malformed response, anything.
+- **`cost_estimation`** — `estimate_cost()` raised, almost always because
+  the routed model has no matching entry in `pricing.yaml` (a config
+  mistake — see "Startup configuration validation" below for how this is
+  now supposed to be caught *before* it ever reaches a live request).
+- **`persistence`** — `decision_service.record()` itself raised (e.g. a
+  DB-level error). The session is rolled back before the failure row is
+  written, so the two writes don't collide in one broken transaction.
+
+One stage is deliberately *not* wrapped: classification and routing
+(`classifier.classify()` / `engine.select()`) are pure in-process logic
+with no external call to fail — `classify()` already catches every
+exception internally and degrades to the heuristic fallback (see below),
+and `engine.select()` only reads `routing.yaml` via a config dict already
+validated at startup. An exception surfacing from there is a genuine
+programming bug, not a degraded dependency, and is left to raise as an
+unhandled 500 rather than being absorbed into an audit row that would
+hide it.
+
+`record_failure()` (`backend/services/decision_service.py`) is written to
+never itself raise: it rolls back, inserts, commits, and if even that
+insert fails, rolls back again and logs at CRITICAL instead of raising —
+a broken audit write must never mask the original failure or crash the
+error response already being built. That's the one honestly-documented
+gap in the guarantee: audit-write failures degrade to a log line, not a
+second table row, and that log line is the signal an operator would
+alert on.
+
 ## Routing flow
 
 ```mermaid
@@ -121,6 +204,67 @@ Routing is entirely deterministic and config-driven — `routing.yaml`'s
 `tiers` mapping is the only place a tier resolves to a concrete
 provider/model. Nothing from the analytics or agent layers below can
 change this at request time (see "Governance" in the README).
+
+**Heuristic fallback confidence (PR5 hardening fix).** The `E` diamond
+above — "confidence < low threshold? escalate" — applies identically
+whether the decision came from the real classifier or the heuristic
+fallback (`classify_heuristically`, used when the classifier LLM call
+fails or returns invalid JSON). That fallback used to hardcode
+`confidence=0.5`. `routing.yaml`'s default `confidence_thresholds.low` is
+`0.6`, so `0.5 < 0.6` was true on *every* fallback, regardless of which
+tier the word count itself had already picked — a 5-word prompt would
+land on BASIC by word count, then get silently escalated to STANDARD
+anyway, purely because the fixed confidence number happened to sit below
+the threshold. That wasn't a documented design choice (the fallback's own
+docstring only explains *why* confidence is low, not this interaction),
+and it meant every fallback silently cost one tier more than the
+heuristic's own logic intended.
+
+Fixed by deriving the fallback's confidence from the configured `low`
+threshold instead of a hardcoded number (`backend/services/heuristic_classifier.py`):
+it now sits just above `low` (clearing the escalation check, so the
+word-count tier is trusted) and stays capped below `high` (so a fallback
+decision is still visibly distinguishable from a genuine high-confidence
+classifier verdict). See `test_heuristic_fallback_confidence_does_not_force_escalation`
+and `test_heuristic_fallback_still_below_high_confidence_threshold` in
+`tests/test_failure_paths.py`.
+
+## Startup configuration validation (PR5 hardening)
+
+`routing.yaml` and `pricing.yaml` are hand-edited, decoupled config files
+— nothing enforces that every provider/model routing.yaml references
+actually has a `pricing.yaml` entry, or that a typo'd provider name
+matches one `providers/factory.py` knows about. Before this hardening
+pass, a mismatch there only surfaced at request time: the first request
+routed to the broken tier would hit `estimate_cost()`'s `KeyError` (now
+handled — see "Failure handling" above — but still a live-traffic failure
+for what's really a deploy-time mistake).
+
+`backend/utils/startup_validation.py`'s `validate_startup_config()` runs
+in `main.py`'s FastAPI `lifespan`, before the app starts serving, and
+checks:
+
+- every provider named in `routing.yaml` (classifier + all three tiers)
+  is one of the providers `providers/factory.py` actually implements
+  (`google`, `openrouter`)
+- every model named in `routing.yaml` (classifier + all three tiers) has
+  a matching entry in `pricing.yaml` — this is the check that would have
+  caught the original motivating gap directly
+- all three tiers (`basic`/`standard`/`advanced`) are present and each
+  has a positive `max_output_tokens`
+- `confidence_thresholds.low < high`, both within `[0, 1]`
+- `learning.min_sample_size` is a positive integer and
+  `learning.min_confidence` is within `[0, 1]`
+- `policy_version` is present
+
+It collects every problem found and raises one `StartupConfigError`
+listing all of them, rather than stopping at the first — a real
+`.yaml` typo often breaks more than one check at once, and fixing them
+one restart at a time is wasted time. On the real `routing.yaml`/
+`pricing.yaml` this repo ships, validation passes silently; see
+`tests/test_failure_paths.py` for both the passing case and every failure
+case (missing pricing entry, unknown provider, inverted thresholds,
+missing tier, multiple simultaneous errors).
 
 ## Decision flow (PR3)
 
@@ -208,3 +352,4 @@ never through it.
 | `routing_patterns` | `routing_learning.refresh()` only | `analytics_service`, `routing_agent` |
 | `optimization_recommendations` | `routing_learning.refresh()` only | `analytics_service`, `decision_service`, `routing_agent` |
 | `investigation_reports` | `routing_agent.investigate()` only | `investigation_service` |
+| `failed_requests` | `decision_service.record_failure()`, called from `chat.py`'s exception handlers | (audit reference; not yet queried by any endpoint — see "Future roadmap" in the README) |

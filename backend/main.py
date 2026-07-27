@@ -9,6 +9,7 @@ from fastapi import FastAPI
 from backend.routers import agent, analytics, chat, decisions, history, models, stats
 from backend.utils.config import get_settings
 from backend.utils.logging_setup import configure_logging
+from backend.utils.startup_validation import validate_startup_config
 
 settings = get_settings()
 configure_logging(settings.log_level)
@@ -17,6 +18,13 @@ logger = logging.getLogger(__name__)
 
 @asynccontextmanager
 async def lifespan(_app: FastAPI) -> AsyncGenerator[None, None]:
+    # Fail fast: a routing.yaml/pricing.yaml mismatch (unknown provider,
+    # unpriced model, inverted confidence thresholds) should stop the app
+    # from serving traffic, not surface as a 500 on the first request that
+    # happens to hit the broken tier. See docs/architecture.md.
+    validate_startup_config()
+    logger.info("Routing/pricing configuration validated")
+
     # Schema creation and policy seeding both happen in
     # `python -m scripts.bootstrap_db`, run once explicitly (locally or as
     # a deploy step) — not here. Two reasons: seeding routing_policies is

@@ -80,6 +80,28 @@ class QualityResult(Base):
     verified_at: Mapped[datetime] = mapped_column(DateTime, default=lambda: datetime.now(timezone.utc))
 
 
+class FailedRequest(Base):
+    """One row per request that never produced a routing_decisions /
+    execution_results row — a provider failure, a cost-estimation error, a
+    persistence error, or any other unexpected exception in the /chat
+    pipeline. `requests`/`routing_decisions`/etc. only ever describe
+    successful requests (their columns are NOT NULL on data only a success
+    produces), so a failure can't be recorded there without weakening that
+    guarantee. This table exists so a failure is never simply dropped from
+    the audit trail — see decision_service.record_failure()."""
+
+    __tablename__ = "failed_requests"
+
+    request_id: Mapped[str] = mapped_column(String, primary_key=True, default=lambda: str(uuid.uuid4()))
+    prompt: Mapped[str] = mapped_column(String, nullable=False)
+    stage: Mapped[str] = mapped_column(String, nullable=False)
+    provider: Mapped[str | None] = mapped_column(String, nullable=True)
+    model: Mapped[str | None] = mapped_column(String, nullable=True)
+    error_message: Mapped[str] = mapped_column(String, nullable=False)
+    status: Mapped[str] = mapped_column(String, default="failed")
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=lambda: datetime.now(timezone.utc))
+
+
 class RoutingPolicy(Base):
     __tablename__ = "routing_policies"
 
