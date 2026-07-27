@@ -1,26 +1,16 @@
 services:
-  backend:
+  app:
     build:
       context: .
-      dockerfile: backend/Dockerfile
+      dockerfile: Dockerfile
     ports:
-      - "8000:8000"
+      - "8080:8080"
     env_file:
+      # DATABASE_URL comes from here — point it at Supabase/Postgres (see
+      # README) or, for local-file SQLite instead, set it to
+      # sqlite:////app/data/modelpilot.db and keep the ./data volume below.
       - .env
     environment:
-      # Overrides the default relative sqlite path so the DB file lands in
-      # the mounted volume and survives container restarts/rebuilds.
-      - DATABASE_URL=sqlite:////app/data/modelpilot.db
+      - PORT=8080
     volumes:
       - ./data:/app/data
-
-  frontend:
-    build:
-      context: .
-      dockerfile: frontend/Dockerfile
-    ports:
-      - "8501:8501"
-    environment:
-      - BACKEND_URL=http://backend:8000
-    depends_on:
-      - backend

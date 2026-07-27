@@ -1,0 +1,33 @@
+worker_processes 1;
+events {
+    worker_connections 1024;
+}
+
+http {
+    server {
+        # Render assigns $PORT at runtime; start.sh envsubst's this file
+        # into /etc/nginx/nginx.conf before nginx starts.
+        listen ${PORT};
+
+        # /api/* -> FastAPI, prefix stripped so backend routes stay exactly
+        # what they already are (/chat, /health, /analytics/*, /agent/*,
+        # /routing/decision/*, /history, /stats, /models) — no backend
+        # code change needed for this reverse proxy to work.
+        location /api/ {
+            proxy_pass http://127.0.0.1:8000/;
+            proxy_set_header Host $host;
+            proxy_set_header X-Real-IP $remote_addr;
+        }
+
+        # everything else -> Streamlit, including its WebSocket connection
+        # (Upgrade/Connection headers) which the UI needs to stay responsive.
+        location / {
+            proxy_pass http://127.0.0.1:8501;
+            proxy_http_version 1.1;
+            proxy_set_header Upgrade $http_upgrade;
+            proxy_set_header Connection "upgrade";
+            proxy_set_header Host $host;
+            proxy_read_timeout 86400;
+        }
+    }
+}

@@ -1,93 +1,207 @@
 <div align="center">
 
-# 🧭 RoutingBridge
+# 🧭 RouteIQ (RoutingBridge)
 
-### Stop sending every question to your most expensive model.
+### An explainable, self-auditing multi-LLM routing platform.
 
-**One chat endpoint. Two AI providers, three routing tiers. Every prompt automatically judged for difficulty and routed to the cheapest model that can actually answer it well.**
+**Classifies every prompt, routes it to the cheapest capable model, records a full decision audit trail, learns from historical outcomes, and offline-investigates its own routing history for optimization opportunities — all advisory, all human-approved.**
 
 [![Python](https://img.shields.io/badge/python-3.11%2B-blue)](requirements.txt)
 [![License](https://img.shields.io/badge/license-MIT-green)](#license)
-[![Live Demo](https://img.shields.io/badge/demo-live-brightgreen)](https://routingbridge-frontend.onrender.com)
+[![Tests](https://img.shields.io/badge/tests-38%20passing-brightgreen)](#testing)
 
-### 🔗 [**Try the live demo →**](https://routingbridge-frontend.onrender.com)
-
-[Why this exists](#why-this-exists) • [What it does](#what-it-does-for-you) • [See it live](#see-it-live-in-5-minutes) • [How it works](#how-it-works)
+[Overview](#overview) • [Architecture](#architecture) • [Features](#features) • [API](#api-overview) • [Running locally](#running-locally) • [Deployment](#deployment) • [Design decisions](#design-decisions) • [Roadmap](#future-roadmap)
 
 </div>
 
 ---
 
-## Why this exists
+## Overview
 
-Most apps that call an LLM pick one model and use it for everything —
-"What's 9 times 6?" and "explain the tradeoffs between Raft and Paxos"
-both hit the same expensive model, even though the first one is
-answerable by something 10-50x cheaper.
+### Problem statement
 
-**RoutingBridge makes that decision automatically, on every request.**
-A small, fast model looks at your prompt first, judges how hard it
-actually is, and hands it off to the cheapest model that can do it
-justice. You get one endpoint to call. It gets you a full explanation
-of why it picked what it picked — and exactly what it cost.
+Most applications that call an LLM pick one model and use it for every
+request — a one-line arithmetic question and a multi-step architecture
+discussion both hit the same (usually expensive) model. That's simple to
+build but wastes money on the majority of prompts that don't need a
+frontier model, and it gives you no record of *why* a particular answer
+came from a particular model, no way to tell if routing decisions are
+actually any good over time, and no mechanism to improve them beyond
+manually re-reading logs.
 
-## What it does for you
+### What RouteIQ does about it
 
-- 💸 **Cuts your model spend automatically** — simple prompts go to a
-  fast, cheap model; hard prompts get escalated to a stronger one.
-  No manual model-picking, no defaulting to the expensive option.
-- 🧠 **Judges difficulty with a real LLM, not keyword rules** — a
-  lightweight classifier reads the prompt and returns a structured
-  verdict: routing tier, task type, reasoning level, and a confidence
-  score — not a guess based on word count.
-- 🛟 **Never goes down because the classifier does** — if the classifier
-  call fails for any reason, a heuristic fallback keeps the app
-  answering instead of erroring out, and it's flagged in the response
-  so you can see exactly when it happened.
-- 🎯 **Escalates when it's not sure** — low-confidence classifications
-  automatically bump up one tier, trading a little cost for a lot more
-  safety on prompts the classifier is unsure about.
-- 🧭 **Explains every routing decision** — each response comes with the
-  tier, provider, model, confidence, and a plain-English reason list,
-  not a black-box model name.
-- 📊 **Shows you exactly where your money goes** — the dashboard tracks
-  total requests, total cost, average latency, cost per model, and
-  estimated savings versus always using the most expensive tier.
-- 🔌 **Works with the providers you can actually get keys for** —
-  native Google Gemini plus OpenRouter, which alone unlocks Mistral,
-  DeepSeek, Qwen, Llama and more through one gateway.
-- ⚙️ **Routing policy lives in config, not code** — which model serves
-  which tier, and how it's priced, is one YAML edit away — no
-  redeploy required to change routing behavior.
+1. **Routes intelligently** — a cheap classifier judges each prompt's
+   difficulty and hands it to the cheapest model that can do it justice,
+   escalating automatically when its own confidence is low.
+2. **Explains every decision** — every routed request produces a
+   `DecisionCard`: which tier, which provider/model, why, and whether a
+   better alternative has been observed historically.
+3. **Persists decision intelligence, not just logs** — a normalized
+   schema (not one flat log table) makes "how does provider X perform on
+   task type Y" a direct query, not a log-scraping exercise.
+4. **Learns, but never routes on its own** — a learning layer aggregates
+   historical outcomes into patterns and recommendations. Nothing it
+   produces is ever applied automatically; a human reviews and, if
+   convinced, edits config and bumps a policy version.
+5. **Audits itself offline** — a deterministic (no-LLM) investigation
+   pipeline periodically reviews routing history for degraded models,
+   cost anomalies, and whether existing recommendations still hold up
+   against live data — producing a structured, persisted report.
 
-## See it live in 5 minutes
+## Architecture
 
-You don't need to read any code to try this.
+Full diagrams (request lifecycle, routing flow, decision flow, analytics
+flow, learning flow, agent flow) live in **[`docs/architecture.md`](docs/architecture.md)**.
+The short version:
+
+```
+Prompt → Classifier → Routing Engine → Provider → Cost Estimator
+       → Quality Verifier → decision_service.record() (one transaction)
+       → { requests, routing_decisions, execution_results, quality_results }
+                                │
+                                ▼
+       routing_learning.refresh()  →  routing_patterns, optimization_recommendations
+                                │                         │
+                                ▼                         ▼
+       routing_agent.investigate() ←──────────────────────┘
+                                │
+                                ▼
+                     investigation_reports
+```
+
+One rule holds across every layer above the first line: **nothing
+downstream of a routing decision can change how future decisions are
+made, except a human editing `routing.yaml`.** See
+[Design decisions](#design-decisions).
+
+## Features
+
+- 💸 **Cuts model spend automatically** — simple prompts go to a fast,
+  cheap model; hard prompts escalate to a stronger one, with the
+  escalation reason attached to the response.
+- 🧠 **LLM-judged difficulty, not keyword rules** — a lightweight
+  classifier returns a structured verdict (tier, task type, reasoning
+  level, confidence), with a heuristic fallback if the classifier call
+  itself fails.
+- 🧭 **Explainable by construction** — `GET /routing/decision/{id}`
+  returns a deterministic, reproducible `DecisionCard`: reasoning steps,
+  candidate models, and whether a learned recommendation applies.
+- 📊 **Real analytics, not a dashboard over a log table** — provider,
+  model, and task-type performance, tier distribution, and daily
+  cost/latency trends, computed over a normalized schema.
+- 🧪 **Quality verification** — an LLM judge grades BASIC/STANDARD-tier
+  answers, feeding pass-rate metrics into every layer above.
+- 🔁 **Learns without auto-applying** — `POST /analytics/refresh`
+  recomputes patterns and generates advisory-only recommendations,
+  explicitly triggered, never on the request path.
+- 🕵️ **Offline optimization agent** — `POST /agent/investigate` runs a
+  deterministic, no-LLM pipeline that finds degraded models, cost
+  anomalies, and re-validates recommendations against live data.
+- 🔌 **Provider-agnostic** — native Google Gemini plus OpenRouter
+  (Mistral, DeepSeek, Qwen, Llama, and more through one gateway); adding
+  a provider is one class and one config entry.
+- ⚙️ **Config-driven routing policy** — which model serves which tier,
+  and learning thresholds, live in `config/routing.yaml`; no redeploy to
+  change routing behavior.
+
+## Screenshots
+
+> _Streamlit UI: chat, history, and stats. (Analytics/decision/agent
+> endpoints are currently API-only — see [Roadmap](#future-roadmap).)_
+
+`docs/screenshots/chat.png` · `docs/screenshots/history.png` · `docs/screenshots/stats.png`
+*(placeholders — add real screenshots here)*
+
+## API overview
+
+| Endpoint | Method | Purpose |
+|---|---|---|
+| `/chat` | POST | Classify, route, generate, and persist one request |
+| `/history` | GET | Paginated past requests |
+| `/stats` | GET | Aggregate cost/latency/quality dashboard numbers |
+| `/models` | GET | Current routing.yaml/pricing.yaml configuration |
+| `/analytics/refresh` | POST | Recompute `routing_patterns` + `optimization_recommendations` |
+| `/analytics/routing` | GET | Provider/model/task-type performance, tier distribution, daily trend |
+| `/analytics/patterns` | GET | Learned routing patterns |
+| `/analytics/recommendations` | GET | Advisory optimization recommendations |
+| `/routing/decision/{request_id}` | GET | `DecisionCard` + matching recommendation for one past request |
+| `/agent/investigate` | POST | Run the offline investigation pipeline, persist a report |
+| `/agent/reports` | GET | List investigation report summaries |
+| `/agent/report/{report_id}` | GET | Full investigation report |
+| `/health` | GET | Liveness check |
+
+Full request/response schemas are in `backend/schemas/*.py` and served
+as OpenAPI docs at `/docs` when the server is running.
+
+## Folder structure
+
+```
+backend/
+  main.py                  # FastAPI app, lifespan, router registration
+  database/
+    db.py                  # engine/session setup
+    models.py               # SQLAlchemy models (all 8 tables)
+  routers/                 # thin: validate → call service → return
+  schemas/                 # Pydantic request/response contracts
+  services/
+    classifier_service.py   # LLM-based routing classifier (+ heuristic fallback)
+    routing_engine.py        # tier → provider/model, confidence escalation
+    quality_verifier.py      # LLM judge for BASIC/STANDARD answers
+    decision_service.py       # transactional persistence + DecisionCard reads
+    history_service.py / stats_service.py / analytics_service.py  # read-side queries
+    routing_learning.py       # pattern/recommendation compute (write-side)
+    routing_agent.py          # offline investigation pipeline (write-side)
+    investigation_service.py  # investigation report reads
+    providers/                # LLMProvider interface + Gemini/OpenRouter adapters
+  utils/                    # settings, YAML config loaders, logging
+config/
+  routing.yaml              # tiers, thresholds, learning config, policy_version
+  pricing.yaml               # per-model token pricing
+scripts/
+  bootstrap_db.py            # explicit table creation + routing_policies seed (not on app startup)
+frontend/
+  streamlit_app.py            # chat / history / stats UI
+deploy/
+  start.sh                     # launches uvicorn + streamlit + nginx in one container
+  nginx.conf.template          # /api/* -> FastAPI, /* -> Streamlit
+Dockerfile                    # single image for local Docker and Render
+render.yaml                    # Render Blueprint: one web service
+tests/                       # 38 tests, no network calls required
+docs/
+  architecture.md             # diagrams + data model, current state
+  interview-guide.md           # why each design decision was made
+  pr1-4 *.md                   # per-PR design rationale, written as each was built
+```
+
+## Running locally
 
 ```bash
 # 1. Get the project
-git clone https://github.com/siddhunangadi/routingbridge.git
-cd routingbridge
+git clone <this-repo>
+cd modelpilot
 
 # 2. Install dependencies
 python3.11 -m venv .venv
 source .venv/bin/activate
 pip install -r requirements.txt
 
-# 3. Add your provider keys
+# 3. Add your provider keys and database URL
 cp .env.example .env
-# open .env and paste in GOOGLE_API_KEY and OPENROUTER_API_KEY
+# open .env and paste in GOOGLE_API_KEY, OPENROUTER_API_KEY, and DATABASE_URL
+# (see "Database: Postgres/Supabase" below — SQLite also still works for a
+# quick local run, no setup required)
 
-# 4. Start both services
+# 4. Create tables + seed the active routing policy (once, or after
+#    changing routing.yaml's policy_version)
+python -m scripts.bootstrap_db
+
+# 5. Start both services
 uvicorn backend.main:app --reload &
 streamlit run frontend/streamlit_app.py
 ```
 
-Now open **http://localhost:8501** — that's the full UI: chat,
-request history, analytics dashboard, and routing config, all in one
-place.
-
-Or just ask it something directly:
+Open **http://localhost:8501** for the UI, or call the API directly:
 
 ```bash
 curl -X POST http://localhost:8000/chat \
@@ -95,89 +209,159 @@ curl -X POST http://localhost:8000/chat \
   -d '{"prompt": "Explain why the sky is blue."}'
 ```
 
-It responds with the answer **and** a full explanation of why it
-chose the model it did:
-
-```json
-{
-  "response": "The sky appears blue because...",
-  "routing_tier": "BASIC",
-  "provider": "google",
-  "model": "gemini-2.5-flash",
-  "confidence": 0.97,
-  "routing_reason": [
-    "Simple, short prompt",
-    "Low reasoning complexity",
-    "Fast, cheap model is sufficient"
-  ],
-  "total_cost": 0.000213,
-  "total_latency_ms": 3120
-}
+```bash
+# after a few /chat calls:
+curl -X POST http://localhost:8000/analytics/refresh
+curl http://localhost:8000/analytics/recommendations
+curl -X POST http://localhost:8000/agent/investigate
 ```
 
-> **Heads up:** the live demo runs on free-tier hosting, which sleeps
-> after 15 minutes of inactivity. The first request after a while can
-> take up to a minute to wake back up — the UI shows a friendly
-> "starting up" message and retries automatically instead of erroring.
+### Database: Postgres/Supabase (or SQLite for a zero-setup local run)
 
-## How it works
+The app runs on Postgres/Supabase by default in production and works
+against SQLite for local dev with zero setup — every model uses plain
+SQLAlchemy types, so nothing else in the codebase is database-specific.
 
-```
-your prompt
-    │
-    ▼
-┌───────────────────────┐   "how hard is this, really?"
-│  Routing classifier    │    (Gemini 2.5 Flash, structured JSON output,
-│  (+ heuristic fallback)│     falls back to word-count if it fails)
-└───────────────────────┘
-    │
-    ▼
-┌───────────────────────┐   "given the tier and confidence, which
-│    Routing engine      │    provider/model actually handles this?"
-└───────────────────────┘   (escalates one tier up if confidence is low)
-    │
-    ▼
-┌───────────────────────┐   Gemini for the fast tier, OpenRouter
-│  Provider + generation │   (Mistral / DeepSeek) for the rest
-└───────────────────────┘
-    │
-    ▼
-┌───────────────────────┐   real token counts × config-driven
-│    Cost estimator      │    pricing — not an estimate
-└───────────────────────┘
-    │
-    ▼
-   your answer, plus the full reasoning trail, cost, and latency —
-   logged to history and rolled up into the analytics dashboard
+**Supabase/Postgres:**
+
+```bash
+# .env
+DATABASE_URL=postgresql+psycopg://postgres.<project-ref>:<password>@aws-0-<region>.pooler.supabase.com:5432/postgres
 ```
 
-Nothing above is a black box — every decision is visible in the
-response and in the "Why this model was selected" panel in the UI.
+Get the connection details from your Supabase project's **Settings →
+Database → Connection string** (use the **Session pooler** entry, not
+the direct `db.<ref>.supabase.co` host — that one is IPv6-only and won't
+resolve on IPv4-only networks/containers). The password is shown once at
+project creation and isn't retrievable afterward; reset it there if lost.
 
-## What's under the hood (for the technical reader)
+Schema is managed by SQLAlchemy's `Base.metadata.create_all()` —
+idempotent `CREATE TABLE IF NOT EXISTS` DDL, run automatically on app
+startup and by `scripts/bootstrap_db.py`. There's no separate migration
+framework: every table lives in `backend/database/models.py`, and that
+file is the single source of truth for the schema. Adding a column or
+table is a plain model change — the next app boot or `bootstrap_db` run
+picks it up.
 
-- **FastAPI** backend, **Streamlit** frontend, **SQLite** for
-  persistence
-- A one-method provider interface (`LLMProvider`) behind which native
-  Gemini and OpenRouter both live — adding a third provider is one
-  new class and one config entry, not a rewrite
-- Routing tiers, provider/model mapping, and pricing all live in
-  `config/routing.yaml` and `config/pricing.yaml`
-- Confidence-based tier escalation, with the escalation reason
-  attached to the response so it's never a silent decision
-- Defensive classifier design: any LLM failure — auth, rate limit,
-  malformed output — degrades to a heuristic instead of a 500
-- Deployed on Render as two independent services (backend + frontend),
-  wired together over HTTP
+```bash
+python -m scripts.bootstrap_db    # create tables + seed the active routing_policies row
+```
 
-## Run with Docker
+**SQLite (local dev, no setup):**
+
+```bash
+# .env
+DATABASE_URL=sqlite:///./modelpilot.db
+```
+
+Works identically — `scripts/bootstrap_db.py` creates the schema and
+seeds the policy the same way regardless of which database is behind
+`DATABASE_URL`.
+
+### Run with Docker
 
 ```bash
 docker compose up --build
 ```
 
-Starts both services — backend on `:8000`, frontend on `:8501` — with
-SQLite data persisted in a mounted volume.
+One container, one port (`:8080`): FastAPI and Streamlit both run
+inside it, with nginx reverse-proxying `/api/*` to FastAPI and
+everything else to Streamlit — the same image `render.yaml` deploys.
+`DATABASE_URL` comes from `.env` either way; point it at Supabase, or set
+it to `sqlite:////app/data/modelpilot.db` to use the mounted `./data`
+volume for a local SQLite file instead.
+
+## Deployment
+
+RouteIQ runs as a **single Render Web Service** — one container, one
+public URL, one Dockerfile (`./Dockerfile`) — rather than separate
+frontend/backend services. That matters specifically on Render's free
+tier: each service sleeps independently after inactivity, so two
+services meant the frontend often sat waiting on a sleeping backend to
+wake up. One service sleeps and wakes as one unit.
+
+```
+Public URL
+    │
+    ▼
+  nginx (listens on $PORT, set by Render)
+    ├── /api/*  → strip prefix → http://127.0.0.1:8000  (FastAPI)
+    └── /*                     → http://127.0.0.1:8501  (Streamlit)
+```
+
+- `Dockerfile` — installs both the Python deps and nginx, copies
+  `backend/`, `frontend/`, `config/`, and `deploy/`, and runs
+  `deploy/start.sh` as its command.
+- `deploy/start.sh` — starts `uvicorn` (port 8000) and `streamlit`
+  (port 8501) in the background, renders `deploy/nginx.conf.template`
+  with the runtime `$PORT` via `envsubst`, then execs `nginx` in the
+  foreground.
+- `deploy/nginx.conf.template` — the two routing rules above, plus
+  WebSocket upgrade headers on the Streamlit route (its UI needs them
+  to stay responsive) and `X-Real-IP`/`Host` forwarding on the API route.
+- `render.yaml` — the Render Blueprint: one `docker` runtime web
+  service, `healthCheckPath: /api/health`.
+
+Backend routes themselves are **completely unchanged** — `/chat`,
+`/health`, `/analytics/*`, `/agent/*`, `/routing/decision/*`, `/history`,
+`/stats`, `/models` are exactly what they were; nginx's `/api/` location
+strips the prefix before proxying, so the backend never sees `/api/` at
+all. The Streamlit UI is unchanged too: `BACKEND_URL` already defaulted
+to `http://localhost:8000`, which is correct as-is now that both
+processes share one container.
+
+## Testing
+
+```bash
+pytest tests/ -v
+```
+
+38 tests, all offline — LLM/provider calls are faked via dependency
+overrides and monkeypatching, so the suite needs no API keys and no
+network access. Coverage includes transactional persistence and
+rollback, pattern/recommendation generation and policy-version
+isolation, DecisionCard reconstruction and recommendation matching, the
+full investigation pipeline (degradation/anomaly/policy-comparison/
+recommendation-validation), and every public endpoint's response
+contract.
+
+## Design decisions
+
+The short version of decisions explained at length in `docs/pr*.md` and
+`docs/interview-guide.md`:
+
+- **Normalized schema over one flat log table** — lets analytics/agent
+  queries aggregate by any dimension (task type, provider, tier)
+  independently, instead of scanning a denormalized blob.
+- **Transactional persistence, no BackgroundTasks** — a request's full
+  decision record (all four tables) either exists completely or not at
+  all; audit integrity is a correctness requirement, not best-effort.
+- **DecisionCard reconstructed on read, not stored as JSON** — the
+  relational columns are the single source of truth; storing a JSON copy
+  alongside them would duplicate the same facts with no independent
+  value.
+- **Recommendations are advisory only, forever** — the routing engine
+  has never once read from `routing_patterns` or
+  `optimization_recommendations`. Applying a recommendation always means
+  a human edits `routing.yaml` and bumps `policy_version`.
+- **The optimization agent is deterministic, not an LLM loop** — every
+  finding is a reproducible SQL query or threshold comparison; two runs
+  against identical data always produce identical findings.
+- **`policy_version` on every learned artifact** — patterns and
+  recommendations are scoped to the policy that produced them, so a
+  routing.yaml change can never silently blend old and new behavior into
+  one average.
+
+## Future roadmap
+
+- Wire the Streamlit UI to the analytics/decision/agent endpoints
+  (currently API-only).
+- Let the optimization agent cite specific `DecisionCard`s as concrete
+  examples inside a finding, not just aggregate numbers.
+- A lighter-weight approval flow for `optimization_recommendations.status`.
+- Multi-tenant/organization scoping — deliberately not built yet; it's a
+  large, separately-scoped effort (auth, data isolation, quotas) rather
+  than an incremental addition to the routing platform.
 
 ## License
 

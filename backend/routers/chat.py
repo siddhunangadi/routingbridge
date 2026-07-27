@@ -15,9 +15,9 @@ from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.orm import Session
 
 from backend.database.db import get_db
-from backend.database.models import RequestLog
 from backend.schemas.chat import ChatRequest, ChatResponse
 from backend.schemas.routing_decision import RoutingTier
+from backend.services import decision_service
 from backend.services.classifier_service import ClassifierService, get_classifier_service
 from backend.services.cost_estimator import estimate_cost
 from backend.services.providers.factory import get_provider
@@ -75,35 +75,22 @@ def chat(
     if routing_result.tier != RoutingTier.ADVANCED:
         quality_verdict = quality_verifier.verify(prompt, provider_response.text)
 
-    db.add(
-        RequestLog(
-            id=request_id,
-            timestamp=timestamp,
-            prompt=prompt,
-            response=provider_response.text,
-            routing_tier=routing_result.tier.value,
-            original_tier=routing_result.original_tier.value,
-            escalated=routing_result.escalated,
-            task_type=decision_outcome.decision.task_type,
-            reasoning_level=decision_outcome.decision.reasoning_level.value,
-            confidence=decision_outcome.decision.confidence,
-            routing_reason=" | ".join(routing_result.reasons),
-            classifier_model=decision_outcome.classifier_model,
-            classifier_latency_ms=decision_outcome.latency_ms,
-            classifier_cost=decision_outcome.cost,
-            fallback_used=decision_outcome.fallback_used,
-            provider=routing_result.provider,
-            model=routing_result.model,
-            input_tokens=provider_response.input_tokens,
-            output_tokens=provider_response.output_tokens,
-            model_cost=model_cost,
-            total_cost=total_cost,
-            total_latency_ms=total_latency_ms,
-            quality_passed=quality_verdict.passed if quality_verdict else None,
-            quality_reason=quality_verdict.reason if quality_verdict else None,
-        )
+    decision_service.record(
+        db,
+        request_id=request_id,
+        prompt=prompt,
+        response=provider_response.text,
+        created_at=timestamp,
+        decision_outcome=decision_outcome,
+        routing_result=routing_result,
+        total_latency_ms=total_latency_ms,
+        input_tokens=provider_response.input_tokens,
+        output_tokens=provider_response.output_tokens,
+        total_cost=total_cost,
+        provider_success=True,
+        error_message=None,
+        quality_verdict=quality_verdict,
     )
-    db.commit()
 
     return ChatResponse(
         request_id=request_id,

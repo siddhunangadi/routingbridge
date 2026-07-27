@@ -7,6 +7,11 @@
 # — it never hardcodes a provider or model name. This file is the only
 # place that decision lives.
 
+# Snapshotted into the routing_policies table at startup so every routing
+# decision can point at exactly the policy version that produced it. Bump
+# this manually when tiers/thresholds below change meaningfully.
+policy_version: "v1.0"
+
 classifier:
   # Runs on every request (classify + quality-verify), so it competed with
   # the BASIC tier's own Gemini calls for the same 20-request/day free-tier
@@ -52,3 +57,18 @@ tiers:
       - "Complex, multi-step reasoning required"
       - "Long or nuanced prompt"
       - "Higher-capability model justified despite cost"
+
+# Governs routing_learning.py (PR2) and, from PR3 on, the DecisionCard.
+# min_sample_size/min_confidence gate whether a routing_pattern is
+# trustworthy enough to become an optimization_recommendation —
+# refresh() always computes patterns and recommendations regardless.
+# `apply_recommendations` is a SEPARATE, later gate: whether PR3 surfaces
+# an existing recommendation as "Recommendation Available" on a live
+# request's DecisionCard. `false` by default. Neither flag ever lets a
+# recommendation change what routing.yaml's tiers actually route to —
+# that still requires a human to bump policy_version. (Renamed from
+# `enabled`, which conflated "generate" with "surface" — see PR2 review.)
+learning:
+  apply_recommendations: false
+  min_sample_size: 20
+  min_confidence: 0.80

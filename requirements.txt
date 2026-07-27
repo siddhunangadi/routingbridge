@@ -5,9 +5,10 @@ pydantic-settings==2.5.2
 sqlalchemy==2.0.35
 streamlit==1.39.0
 httpx==0.27.2
-python-dotenv==1.0.1
-tiktoken==0.8.0
+python-dotenv==1.0.1  # not imported directly; pydantic-settings requires it for env_file loading
 plotly==5.24.1
 pandas==2.2.3
 pyyaml==6.0.2
 google-generativeai==0.8.3
+pytest==8.3.3
+psycopg[binary]==3.2.3
