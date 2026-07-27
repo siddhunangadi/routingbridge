@@ -10,7 +10,7 @@
 [![License](https://img.shields.io/badge/license-MIT-green)](#license)
 [![Tests](https://img.shields.io/badge/tests-57%20passing-brightgreen)](#testing)
 
-[🔗 Live demo](https://routeiq-5rgn.onrender.com)
+[Live demo](https://routeiq-5rgn.onrender.com)
 
 [Overview](#overview) • [Architecture](#architecture) • [Features](#features) • [API](#api-overview) • [Running locally](#running-locally) • [Deployment](#deployment) • [Design decisions](#design-decisions) • [Roadmap](#future-roadmap)
 
@@ -18,20 +18,17 @@
 
 ---
 
-## What is this, in plain English?
+## In plain terms
 
-Companies that use AI chatbots (like ChatGPT) pay for every question asked.
-A simple question ("what's 2+2?") and a hard one ("plan my company's
-five-year strategy") usually get sent to the same expensive AI model —
-that's wasteful, like hiring a lawyer to answer "what time is it?"
+Every AI chatbot call costs money, and most apps send every question — easy
+or hard — to the same model. That's like paying a specialist's rate for
+every question, even "what time is it?"
 
-RoutingBridge sits in front of the AI and reads each question first. Easy
-questions go to a cheap, fast AI. Hard questions go to a more expensive,
-smarter one. It also keeps a receipt for every decision — which AI
-answered, why it was picked, what it cost — so nothing is a black box.
-Over time it looks back at those receipts to spot patterns (e.g. "this AI
-has been getting worse lately") and suggests improvements, but a person
-always has to approve any change before it takes effect.
+RoutingBridge reads each question first, sends the easy ones to a cheap
+model and the hard ones to a stronger one, and keeps a record of every
+choice it made and why. It also reviews its own history over time and
+suggests improvements — but never applies one without a person signing
+off first.
 
 ## Overview
 
@@ -94,31 +91,31 @@ made, except a human editing `routing.yaml`.** See
 
 ## Features
 
-- 💸 **Cuts model spend automatically** — simple prompts go to a fast,
+- **Cuts model spend automatically** — simple prompts go to a fast,
   cheap model; hard prompts escalate to a stronger one, with the
   escalation reason attached to the response.
-- 🧠 **LLM-judged difficulty, not keyword rules** — a lightweight
+- **LLM-judged difficulty, not keyword rules** — a lightweight
   classifier returns a structured verdict (tier, task type, reasoning
   level, confidence), with a heuristic fallback if the classifier call
   itself fails.
-- 🧭 **Explainable by construction** — `GET /routing/decision/{id}`
+- **Explainable by construction** — `GET /routing/decision/{id}`
   returns a deterministic, reproducible `DecisionCard`: reasoning steps,
   candidate models, and whether a learned recommendation applies.
-- 📊 **Real analytics, not a dashboard over a log table** — provider,
+- **Real analytics, not a dashboard over a log table** — provider,
   model, and task-type performance, tier distribution, and daily
   cost/latency trends, computed over a normalized schema.
-- 🧪 **Quality verification** — an LLM judge grades BASIC/STANDARD-tier
+- **Quality verification** — an LLM judge grades BASIC/STANDARD-tier
   answers, feeding pass-rate metrics into every layer above.
-- 🔁 **Learns without auto-applying** — `POST /analytics/refresh`
+- **Learns without auto-applying** — `POST /analytics/refresh`
   recomputes patterns and generates advisory-only recommendations,
   explicitly triggered, never on the request path.
-- 🕵️ **Offline optimization agent** — `POST /agent/investigate` runs a
+- **Offline optimization agent** — `POST /agent/investigate` runs a
   deterministic, no-LLM pipeline that finds degraded models, cost
   anomalies, and re-validates recommendations against live data.
-- 🔌 **Provider-agnostic** — native Google Gemini plus OpenRouter
+- **Provider-agnostic** — native Google Gemini plus OpenRouter
   (Mistral, DeepSeek, Qwen, Llama, and more through one gateway); adding
   a provider is one class and one config entry.
-- ⚙️ **Config-driven routing policy** — which model serves which tier,
+- **Config-driven routing policy** — which model serves which tier,
   and learning thresholds, live in `config/routing.yaml`; no redeploy to
   change routing behavior.
 
