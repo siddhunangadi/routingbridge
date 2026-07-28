@@ -1,0 +1,643 @@
+<title>RoutingBridge — Engineering Walkthrough</title>
+<style>
+:root{
+  --bg:#f7f8fa;
+  --surface:#ffffff;
+  --border:#dde2e8;
+  --text:#1a2230;
+  --text-dim:#5b6472;
+  --accent:#2f5f8f;
+  --accent-soft:#e3ecf5;
+  --code-bg:#eef1f4;
+  --mono: "SF Mono", ui-monospace, "Cascadia Mono", Consolas, monospace;
+  --serif: Georgia, "Iowan Old Style", "Palatino Linotype", serif;
+  --sans: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+}
+@media (prefers-color-scheme: dark){
+  :root{
+    --bg:#12161c;
+    --surface:#181e26;
+    --border:#2a323d;
+    --text:#dde3ea;
+    --text-dim:#8a95a3;
+    --accent:#7aa6d6;
+    --accent-soft:#1b2733;
+    --code-bg:#1d232c;
+  }
+}
+:root[data-theme="dark"]{
+  --bg:#12161c; --surface:#181e26; --border:#2a323d; --text:#dde3ea;
+  --text-dim:#8a95a3; --accent:#7aa6d6; --accent-soft:#1b2733; --code-bg:#1d232c;
+}
+:root[data-theme="light"]{
+  --bg:#f7f8fa; --surface:#ffffff; --border:#dde2e8; --text:#1a2230;
+  --text-dim:#5b6472; --accent:#2f5f8f; --accent-soft:#e3ecf5; --code-bg:#eef1f4;
+}
+*{box-sizing:border-box;}
+html,body{margin:0;padding:0;}
+body{
+  background:var(--bg);
+  color:var(--text);
+  font-family:var(--sans);
+  font-size:16px;
+  line-height:1.65;
+}
+.shell{
+  display:grid;
+  grid-template-columns:280px minmax(0,1fr);
+  gap:0;
+  max-width:1320px;
+  margin:0 auto;
+}
+nav.toc{
+  position:sticky;
+  top:0;
+  align-self:start;
+  height:100vh;
+  overflow-y:auto;
+  padding:2.5rem 1.5rem 2rem 2rem;
+  border-right:1px solid var(--border);
+}
+nav.toc .label{
+  font-family:var(--mono);
+  font-size:.7rem;
+  letter-spacing:.08em;
+  text-transform:uppercase;
+  color:var(--text-dim);
+  margin-bottom:1rem;
+}
+nav.toc ul{list-style:none;margin:0;padding:0;display:flex;flex-direction:column;gap:.5rem;}
+nav.toc a{
+  color:var(--text-dim);
+  text-decoration:none;
+  font-size:.82rem;
+  line-height:1.4;
+  display:block;
+}
+nav.toc a:hover, nav.toc a:focus-visible{color:var(--accent);}
+main{padding:2.5rem 3rem 6rem 3rem; min-width:0;}
+h1{
+  font-family:var(--serif);
+  font-size:2.1rem;
+  font-weight:600;
+  letter-spacing:-.01em;
+  text-wrap:balance;
+  margin:0 0 .5rem 0;
+}
+h2{
+  font-family:var(--serif);
+  font-size:1.4rem;
+  font-weight:600;
+  margin:3rem 0 1rem 0;
+  border-top:1px solid var(--border);
+  padding-top:1.75rem;
+  scroll-margin-top:1.5rem;
+}
+h3{font-family:var(--serif); font-size:1.15rem; margin:1.75rem 0 .75rem 0;}
+p{max-width:74ch; color:var(--text); margin:0 0 1rem 0;}
+p strong{color:var(--text); font-weight:650;}
+code{
+  font-family:var(--mono);
+  font-size:.85em;
+  background:var(--code-bg);
+  padding:.12em .38em;
+  border-radius:4px;
+  color:var(--accent);
+}
+blockquote{
+  margin:1.25rem 0;
+  padding:.9rem 1.1rem;
+  background:var(--accent-soft);
+  border-radius:6px;
+  max-width:74ch;
+}
+blockquote, blockquote code{color:var(--text);}
+ul{max-width:74ch; padding-left:1.3rem; margin:0 0 1rem 0;}
+ol{max-width:74ch; padding-left:1.4rem; margin:0 0 1rem 0;}
+li{margin-bottom:.45rem;}
+hr{border:none; border-top:1px solid var(--border); margin:2.5rem 0;}
+.diagram-wrap{
+  background:var(--surface);
+  border:1px solid var(--border);
+  border-radius:10px;
+  padding:1.25rem;
+  margin:1rem 0 2rem 0;
+  overflow-x:auto;
+}
+.diagram-wrap pre.mermaid{margin:0;}
+.eyebrow{
+  font-family:var(--mono);
+  font-size:.72rem;
+  letter-spacing:.09em;
+  text-transform:uppercase;
+  color:var(--accent);
+  margin-bottom:.75rem;
+}
+.table-wrap{overflow-x:auto; margin:0 0 1.5rem 0; border:1px solid var(--border); border-radius:8px;}
+table{border-collapse:collapse; width:100%; font-size:.88rem;}
+th{
+  text-align:left;
+  background:var(--code-bg);
+  font-family:var(--mono);
+  font-size:.72rem;
+  letter-spacing:.04em;
+  text-transform:uppercase;
+  color:var(--text-dim);
+  padding:.65rem .9rem;
+  border-bottom:1px solid var(--border);
+  white-space:nowrap;
+}
+td{padding:.65rem .9rem; border-bottom:1px solid var(--border); vertical-align:top;}
+tr:last-child td{border-bottom:none;}
+ul.checklist{list-style:none; padding-left:0;}
+li.checklist-item{
+  position:relative;
+  padding-left:1.6rem;
+}
+li.checklist-item::before{
+  content:"";
+  position:absolute;
+  left:0; top:.15rem;
+  width:1.05rem; height:1.05rem;
+  border:1.5px solid var(--text-dim);
+  border-radius:4px;
+}
+pre.codeblock{
+  background:var(--code-bg);
+  border:1px solid var(--border);
+  border-radius:8px;
+  padding:1rem 1.1rem;
+  overflow-x:auto;
+  font-family:var(--mono);
+  font-size:.82rem;
+  line-height:1.55;
+  max-width:100%;
+}
+pre.codeblock code{background:none; padding:0; color:var(--text);}
+@media (max-width:900px){
+  .shell{grid-template-columns:1fr;}
+  nav.toc{position:relative; height:auto; border-right:none; border-bottom:1px solid var(--border);}
+  main{padding:2rem 1.25rem 4rem 1.25rem;}
+}
+</style>
+
+<div class="shell">
+  <nav class="toc">
+    <div class="label">Contents</div>
+    <ul>
+      <li><a href="#1-reading-order">1. Reading Order</a></li>
+      <li><a href="#2-project-map">2. Project Map</a></li>
+      <li><a href="#3-file-by-file-walkthrough">3. File-by-File Walkthrough</a></li>
+      <li><a href="#4-call-graph">4. Call Graph</a></li>
+      <li><a href="#5-function-walkthrough-decision-service-record">5. Function Walkthrough</a></li>
+      <li><a href="#6-execution-trace-one-post-chat-request-end-to-end">6. Execution Trace</a></li>
+      <li><a href="#7-variable-journey-prompt">7. Variable Journey</a></li>
+      <li><a href="#8-object-lifecycle">8. Object Lifecycle</a></li>
+      <li><a href="#9-database-walkthrough">9. Database Walkthrough</a></li>
+      <li><a href="#10-configuration-walkthrough">10. Configuration Walkthrough</a></li>
+      <li><a href="#11-service-deep-dive-routing-learning-py">11. Service Deep Dive</a></li>
+      <li><a href="#12-provider-deep-dive">12. Provider Deep Dive</a></li>
+      <li><a href="#13-error-handling-walkthrough">13. Error Handling</a></li>
+      <li><a href="#14-design-patterns">14. Design Patterns</a></li>
+      <li><a href="#15-engineering-decisions">15. Engineering Decisions</a></li>
+      <li><a href="#16-code-smells">16. Code Smells</a></li>
+      <li><a href="#17-interview-questions">17. Interview Questions</a></li>
+      <li><a href="#18-knowledge-checklist">18. Knowledge Checklist</a></li>
+      <li><a href="#19-learning-roadmap-5-day-onboarding-plan">19. Learning Roadmap</a></li>
+      <li><a href="#20-final-challenge-practical-exercises">20. Final Challenge</a></li>
+    </ul>
+  </nav>
+  <main>
+    <div class="eyebrow">Implementation guide · Onboarding</div>
+    <h1>RoutingBridge — Engineering Walkthrough Guide</h1>
+<p>This is the implementation guide, not the architecture guide. It assumes you've read <code>docs/backend-architecture.md</code> and already know the shape of the system. This document is about the *code*: which file to open first, what each function actually does, and where the sharp edges are.</p>
+<p>Everything below is derived directly from <code>backend/</code>, <code>config/</code>, <code>scripts/</code>, and <code>tests/</code> as they exist in this repository. Nothing is inferred or invented — where the code doesn't do something (retries, auth, caching), this guide says so explicitly instead of describing a feature that isn't there.</p>
+<hr>
+<h2 id="1-reading-order">1. Reading Order</h2>
+<p>Read these in this order, not randomly:</p>
+<ol><li><code>backend/main.py</code></li><li><code>backend/routers/chat.py</code></li><li><code>backend/schemas/chat.py</code>, <code>routing_decision.py</code>, <code>routing.py</code></li><li><code>backend/services/classifier_service.py</code>, <code>heuristic_classifier.py</code>, <code>routing_engine.py</code></li><li><code>backend/services/providers/base.py</code>, <code>factory.py</code>, <code>gemini_provider.py</code>, <code>openrouter_provider.py</code></li><li><code>backend/database/db.py</code>, <code>models.py</code></li><li><code>config/routing.yaml</code>, <code>config/pricing.yaml</code>, <code>backend/utils/config.py</code>, <code>yaml_config.py</code>, <code>startup_validation.py</code></li><li><code>tests/conftest.py</code>, <code>tests/test_failure_paths.py</code></li></ol>
+<p><strong>Why this order and not another:</strong> <code>main.py</code> is four lines of real logic wrapped in FastAPI ceremony — it tells you what routers exist and that config validation happens at boot, nothing more. <code>chat.py</code> is the one file that touches every other subsystem in a single, linear function, so reading it first gives you a map of the whole system before you've read any of the individual pieces — you'll recognize <code>classifier_service</code>, <code>routing_engine</code>, <code>providers</code>, and <code>decision_service</code> by name before you open any of them. Schemas next because <code>chat.py</code> is full of type names (<code>RoutingDecision</code>, <code>RoutingResult</code>, <code>ChatResponse</code>) that are meaningless until you've seen their field lists. Services in call order (classifier → engine → provider) mirrors the actual request flow. Database last-but-one because until you've seen the services that write to it, the four-table split (<code>requests</code> / <code>routing_decisions</code> / <code>execution_results</code> / <code>quality_results</code>) looks like arbitrary normalization instead of "one insert per pipeline stage." Config files last because they're inert data — they only make sense once you know who reads them (<code>classifier_service</code> reads <code>classifier:</code>, <code>routing_engine</code> reads <code>tiers:</code>, <code>cost_estimator</code> reads <code>pricing.yaml</code>). Tests are the reading order's answer key: <code>test_failure_paths.py</code> specifically exercises every non-happy-path branch in <code>chat.py</code>, so it's the fastest way to confirm you understood the error handling correctly.</p>
+<p>Everything else (the other 7 routers, <code>analytics_service.py</code>, <code>routing_learning.py</code>, <code>routing_agent.py</code>, <code>investigation_service.py</code>) is a straightforward extension of this core once you have it — see the Learning Roadmap (Section 19) for when to read those.</p>
+<hr>
+<h2 id="2-project-map">2. Project Map</h2>
+<pre class="codeblock"><code>backend/
+├── main.py                    FastAPI app, lifespan (startup validation), router registration
+├── routers/                   HTTP layer only — parse request, call one service, return response model
+│   ├── chat.py                POST /chat — the core pipeline
+│   ├── history.py             GET /history
+│   ├── stats.py                GET /stats
+│   ├── models.py               GET /models — read-only view of routing.yaml/pricing.yaml
+│   ├── analytics.py            GET/POST /analytics/* — overview, patterns, recommendations, refresh
+│   ├── decisions.py            GET /routing/decision/{id} — the Decision Card
+│   └── agent.py                POST /agent/investigate, GET /agent/report(s)
+├── schemas/                    Pydantic request/response contracts — no logic
+│   ├── chat.py, routing.py, routing_decision.py, decision_card.py
+│   ├── quality.py, history.py, stats.py, analytics.py, investigation.py
+├── services/                   All business logic lives here
+│   ├── classifier_service.py   LLM-based routing classifier (+ heuristic fallback)
+│   ├── heuristic_classifier.py Word-count fallback when the LLM classifier fails
+│   ├── routing_engine.py       Tier → provider/model mapping + confidence escalation
+│   ├── cost_estimator.py       pricing.yaml lookup → $ cost
+│   ├── quality_verifier.py     LLM-judge pass/fail on BASIC/STANDARD answers
+│   ├── decision_service.py     record() / record_failure() / get_decision_card()
+│   ├── analytics_service.py    Read-only aggregation for /analytics/*
+│   ├── routing_learning.py     refresh(): recompute routing_patterns + recommendations
+│   ├── routing_agent.py        investigate(): 5 deterministic checks → InvestigationReport
+│   ├── investigation_service.py Read-side queries for agent reports
+│   ├── history_service.py      Read-side query for /history
+│   ├── stats_service.py        Read-side query for /stats
+│   ├── query_helpers.py        Shared SQL fragment (PASS_RATE), used by 3 services
+│   └── providers/               LLMProvider abstraction
+│       ├── base.py              ABC + ProviderResponse
+│       ├── factory.py           name -&gt; instance
+│       ├── gemini_provider.py   Native Google SDK
+│       └── openrouter_provider.py  REST gateway (Mistral/DeepSeek/etc.)
+├── database/
+│   ├── db.py                   Engine, SessionLocal, Base, get_db() dependency
+│   └── models.py                9 SQLAlchemy tables
+└── utils/
+    ├── config.py                Settings(BaseSettings) — .env
+    ├── yaml_config.py            routing.yaml / pricing.yaml loaders (lru_cache)
+    ├── startup_validation.py     Fails app boot on bad config
+    └── logging_setup.py          One basicConfig() call
+
+config/
+├── routing.yaml                 Classifier config, tier→model map, confidence thresholds, learning gates
+└── pricing.yaml                 Per-model $/1M token pricing
+
+scripts/
+└── bootstrap_db.py              create_all() + seed routing_policies — run manually, not on app boot
+
+tests/
+├── conftest.py                  In-memory SQLite fixture
+└── test_*.py                    9 test modules, ~1,435 lines total</code></pre>
+<p><strong>Folder responsibilities, one line each:</strong></p>
+<ul><li><code>routers/</code> — HTTP-only. Parse the request, call exactly one service function, return a response model. No business logic, no direct DB queries (<code>models.py</code> is the one exception — it reads YAML directly since there's no service layer worth adding for a single config passthrough).</li><li><code>schemas/</code> — Pydantic models only. Every field here is either an LLM output shape (<code>RoutingDecision</code>), an internal result type (<code>RoutingResult</code>), or an HTTP contract (<code>ChatResponse</code>). No methods beyond what Pydantic gives you for free.</li><li><code>services/</code> — where all the actual logic lives. Every service is either a plain function module (<code>decision_service</code>, <code>analytics_service</code>, <code>routing_learning</code>, <code>routing_agent</code>, <code>history_service</code>, <code>stats_service</code> — no instance state) or a thin class with <code>@lru_cache</code>d construction (<code>ClassifierService</code>, <code>RoutingEngine</code>, <code>QualityVerifier</code> — hold config loaded once at construction).</li><li><code>services/providers/</code> — the one place polymorphism is actually used in this codebase. See Section 12.</li><li><code>database/</code> — SQLAlchemy setup and the 9 table definitions. No query logic lives here; that's in <code>services/</code>.</li><li><code>utils/</code> — cross-cutting concerns: env config, YAML config, startup validation, logging. Nothing here depends on <code>services/</code> or <code>routers/</code>.</li></ul>
+<hr>
+<h2 id="3-file-by-file-walkthrough">3. File-by-File Walkthrough</h2>
+<h3><code>backend/main.py</code></h3>
+<p><strong>Purpose:</strong> FastAPI app construction, <code>lifespan()</code> startup hook, router registration, <code>/health</code>. <strong>Why it exists:</strong> Every FastAPI app needs exactly one of these. <strong>Who calls it:</strong> Uvicorn (<code>uvicorn backend.main:app</code>). <strong>What it calls:</strong> <code>validate_startup_config()</code>, <code>configure_logging()</code>, <code>get_settings()</code>. <strong>Important methods:</strong> <code>lifespan()</code> — an <code>@asynccontextmanager</code> that runs <code>validate_startup_config()</code> before <code>yield</code> (blocks boot on bad config) and does nothing on shutdown. <strong>Common mistakes:</strong> Assuming <code>Base.metadata.create_all()</code> runs here — it doesn't. Schema creation is <code>scripts/bootstrap_db.py</code>, run explicitly. If you add a new table and forget to run bootstrap against a fresh DB, you'll get a <code>no such table</code> error at first query, not at boot. <strong>Interviewer question:</strong> "Why does startup validation block boot instead of just logging a warning?" — answer is in the file's own docstring: a broken tier should fail at deploy time, not on the first request that happens to hit it.</p>
+<h3><code>backend/routers/chat.py</code></h3>
+<p><strong>Purpose:</strong> <code>POST /chat</code> — the entire user-facing pipeline in one function. <strong>Why it exists:</strong> This is the product. <strong>Who calls it:</strong> The Streamlit frontend via <code>httpx</code>. <strong>What it calls:</strong> <code>classifier.classify()</code>, <code>engine.select()</code>, <code>get_provider()</code> → <code>provider.generate()</code>, <code>estimate_cost()</code>, <code>quality_verifier.verify()</code>, <code>decision_service.record()</code> / <code>decision_service.record_failure()</code>. <strong>Important methods:</strong> <code>chat()</code> — the only function in the file. FastAPI dependency injection (<code>Depends(get_db)</code>, <code>Depends(get_settings)</code>, etc.) supplies a fresh <code>Session</code> and cached service singletons per call. <strong>Common mistakes:</strong> Assuming classification and routing selection can fail and get audited like the provider call — they can't and don't (see Section 13: an exception in <code>classifier.classify()</code> or <code>engine.select()</code> is uncaught, on purpose). Also: assuming there's a retry on provider failure — there isn't. One call, one shot, 502 on failure. <strong>Interviewer questions:</strong> "Walk me through what happens if <code>quality_verifier.verify()</code> raises." (It can't reach the caller — see <code>quality_verifier.py</code>, it catches everything internally and returns <code>None</code>.) "Why is <code>quality_verifier</code> only called for BASIC/STANDARD?" (Comment in the file: nothing to compare ADVANCED against, it's already the best model.)</p>
+<h3><code>backend/schemas/routing_decision.py</code></h3>
+<p><strong>Purpose:</strong> <code>RoutingDecision</code> (exact JSON shape demanded from the classifier LLM) and <code>RoutingDecisionOutcome</code> (that decision plus operational metadata: latency, cost, <code>fallback_used</code>). <strong>Why two layers:</strong> <code>RoutingDecision</code> is what the LLM must produce and <code>RoutingDecision.model_validate(data)</code> is what actually turns untrusted LLM JSON into a typed object your code can trust. <code>RoutingDecisionOutcome</code> wraps it with metadata the LLM never produces. <strong>Who calls it:</strong> <code>classifier_service.py</code> produces both; <code>chat.py</code> and <code>decision_service.py</code> consume them. <strong>Common mistake:</strong> Assuming <code>task_type</code>/<code>reasoning_level</code> drive routing logic — they don't. Only <code>routing_tier</code> and <code>confidence</code> do (see <code>routing_engine.py</code>). <code>task_type</code> is captured for analytics only.</p>
+<h3><code>backend/services/classifier_service.py</code></h3>
+<p><strong>Purpose:</strong> Ask a cheap LLM (configured under <code>routing.yaml</code>'s <code>classifier:</code> block — currently <code>mistralai/mistral-small-3.2-24b-instruct</code> via OpenRouter) to classify a prompt into a tier, with a heuristic fallback. <strong>Why it exists:</strong> Routing needs *some* signal about prompt complexity before picking a model; an LLM classifier is more accurate than a word-count heuristic, so it's the primary path. <strong>Who calls it:</strong> <code>chat.py</code> via the <code>classify</code> FastAPI dependency. <strong>What it calls:</strong> <code>providers.factory.get_provider()</code>, <code>heuristic_classifier.classify_heuristically()</code> (fallback only), <code>cost_estimator.estimate_cost()</code>. <strong>Important methods:</strong></p>
+<ul><li><code>classify(prompt)</code> — public entrypoint. Try/except around</li></ul>
+<p><code>_classify_with_llm</code>; catches literally <code>Exception</code> (see the <code># noqa: BLE001</code> comment — deliberate, any failure here must degrade, not crash).</p>
+<ul><li><code>_classify_with_llm(prompt)</code> — builds the classifier prompt, calls the</li></ul>
+<p>provider with <code>response_format="json_object"</code>, parses and validates the JSON via <code>RoutingDecision.model_validate</code>.</p>
+<ul><li><code>strip_json_fence(text)</code> — module-level helper (also reused by</li></ul>
+<p><code>quality_verifier.py</code>), defensively strips a <code> </code>`<code>json </code> fence even though <code>response_format="json_object"</code> is what actually fixes this in practice (see its own docstring — verified against a real bug where Mistral wrapped JSON in a fence). <strong>Common mistakes:</strong> Assuming a classifier failure ever surfaces as a user- facing error — it can't; it silently degrades to the heuristic path with <code>fallback_used=True</code> in the response. Assuming the classifier answers the user's prompt — it never does; its only job is picking a tier. <strong>Interviewer questions:</strong> "What happens if <code>google_api_key</code>/ <code>openrouter_api_key</code> isn't set?" (<code>self._client_ready = bool(api_key)</code> — if false, <code>classify()</code> raises <code>RuntimeError</code> internally and falls straight to heuristic, no network call attempted.) "Why <code>@lru_cache</code> on <code>get_classifier_service()</code>?" (One instance per process — same pattern as <code>get_settings()</code> — the constructor does I/O, reading <code>routing.yaml</code>.)</p>
+<h3><code>backend/services/heuristic_classifier.py</code></h3>
+<p><strong>Purpose:</strong> Word-count-based fallback tier decision. <strong>Why it exists:</strong> Explicitly documented in the module docstring as "the exception path, not the primary classifier" — degrade gracefully instead of 500ing when the LLM classifier is unavailable. <strong>Important detail — a real bug that was fixed here:</strong> the fallback's confidence used to be hardcoded to <code>0.5</code>, which sits *below* <code>routing.yaml</code>'s <code>confidence_thresholds.low</code> (<code>0.6</code>). Since <code>routing_engine.select()</code> escalates any decision under <code>low</code>, every single fallback got silently bumped one tier — a 5-word prompt landing on BASIC by word count would get pushed to STANDARD purely because <code>0.5 &lt; 0.6</code>, an interaction nobody intended. Fixed by <code>_fallback_confidence()</code>: derives confidence as <code>low + 0.05</code> (capped below <code>high</code>), so the heuristic tier is trusted and *not* auto-escalated. This is a genuinely good "why was this done" story for Section 15 and a strong debugging interview question. <strong>Interviewer question:</strong> "If <code>confidence_thresholds.low</code> in <code>routing.yaml</code> were changed to <code>0.8</code>, what would <code>_fallback_confidence()</code> return, and would that still avoid the escalation bug?" (Reason through <code>min(low + 0.05, high - 0.01)</code>.)</p>
+<h3><code>backend/services/routing_engine.py</code></h3>
+<p><strong>Purpose:</strong> Turn a <code>RoutingDecision</code> into a concrete <code>RoutingResult</code> (provider, model, max_output_tokens), applying confidence-based escalation. <strong>Why it exists:</strong> Deliberately knows nothing about model names — only tiers. Swapping which model serves ADVANCED is a one-line <code>routing.yaml</code> edit; this file never changes for that. <strong>Important methods:</strong></p>
+<ul><li><code>select(decision)</code> — reads <code>confidence_thresholds</code> from the cached YAML</li></ul>
+<p>config; if <code>escalate_on_low_confidence</code> and <code>decision.confidence &lt; low</code>, calls <code>_next_tier()</code> and bumps one tier (never past ADVANCED — see <code>_next_tier</code> returning <code>None</code> at the top of <code>_TIER_ORDER</code>).</p>
+<ul><li><code>_next_tier(tier)</code> — index lookup into `_TIER_ORDER = [BASIC, STANDARD,</li></ul>
+<p>ADVANCED]<code>. <strong>Common mistake:</strong> Assuming escalation can happen more than once per request — it can't; </code>select()<code> only ever bumps zero or one tier, never recursively re-checks the new tier's own confidence (there isn't a new confidence to check — it's the same </code>decision.confidence<code> throughout). <strong>Interviewer question:</strong> "A request classifies as ADVANCED with confidence 0.4. What tier does it actually route to?" (Still ADVANCED — </code>_next_tier(ADVANCED)<code> returns </code>None<code>, so </code>candidate is None` and no escalation happens, despite low confidence. This is a real edge case worth knowing.)</p>
+<h3><code>backend/services/providers/*</code></h3>
+<p>See Section 12 for the deep dive. Summary here: <code>base.py</code> defines <code>LLMProvider</code> (ABC, one abstract method <code>generate()</code>) and <code>ProviderResponse</code> (normalized <code>{text, input_tokens, output_tokens}</code>). <code>factory.py</code> is an <code>if/if/raise</code> — not a registry, not a class, "ceremony for two providers" per its own docstring. <code>gemini_provider.py</code> wraps <code>google.generativeai.GenerativeModel</code>. <code>openrouter_provider.py</code> wraps a single <code>httpx.post</code> to one REST endpoint that fronts Mistral/DeepSeek/etc.</p>
+<h3><code>backend/services/decision_service.py</code></h3>
+<p><strong>Purpose:</strong> The single write path for a successful request (<code>record()</code>), the single write path for a failed one (<code>record_failure()</code>), and read-side reconstruction of a <code>DecisionCard</code> (<code>get_decision_card()</code>). <strong>Why it exists:</strong> Centralizing every write to <code>requests</code> / <code>routing_decisions</code> / <code>execution_results</code> / <code>quality_results</code> in one function means there's exactly one place that can get the transaction boundary wrong, and it's been gotten right. <strong>Important methods:</strong></p>
+<ul><li><code>record(...)</code> — inserts <code>Request</code>, then <strong><code>db.flush()</code></strong> (critical — see</li></ul>
+<p>the comment: no ORM <code>relationship()</code> exists between the tables, only column-level <code>ForeignKey</code>s, so nothing else orders these inserts; SQLite silently tolerated the unflushed case in dev, Postgres/Supabase raised a real <code>ForeignKeyViolation</code> during migration), then inserts <code>RoutingDecision</code>, <code>ExecutionResult</code>, and conditionally <code>QualityResult</code>, then one <code>db.commit()</code> for all four.</p>
+<ul><li><code>record_failure(...)</code> — inserts one <code>FailedRequest</code> row. Wrapped in its</li></ul>
+<p>own try/except that <strong>must never raise</strong> (it's called from inside exception handlers); on failure it rolls back and logs at <code>CRITICAL</code> rather than propagating.</p>
+<ul><li><code>get_decision_card(db, request_id)</code> — three-way join</li></ul>
+<p>(<code>Request</code>/<code>RoutingDecision</code>/<code>ExecutionResult</code>), builds <code>reasoning_steps</code> deterministically from stored columns (<code>_build_reasoning_steps</code>), and looks up a matching <code>OptimizationRecommendation</code> by exact attribute equality (<code>_find_matching_recommendation</code>) — not a foreign key. <strong>Common mistakes:</strong> Assuming <code>DecisionCard</code> is stored anywhere — it isn't; it's reconstructed from relational columns on every read (explicit design choice, see the module docstring: storing it as a JSON blob "would duplicate the same facts twice with no independent value"). Assuming a <code>quality_results</code> row always exists — it's optional (<code>outerjoin</code> in <code>history_service.py</code>, conditional insert here); ADVANCED-tier requests never get one. <strong>Interviewer questions:</strong> "Why <code>db.flush()</code> and not just <code>db.commit()</code> immediately after adding <code>Request</code>?" (Flush assigns the PK and makes the row visible to the transaction's subsequent FK-checked inserts without ending the transaction — a partial commit would break atomicity.) "What happens if <code>record()</code> itself raises after <code>record_failure</code> already ran for a provider error?" (It can't — they're mutually exclusive branches in <code>chat.py</code>'s try/except structure; <code>record_failure</code> for <code>stage="persistence"</code> only runs if <code>record()</code> itself throws.)</p>
+<h3><code>backend/database/models.py</code></h3>
+<p>Covered table-by-table in Section 9. Read the module docstring closely — it explains *why* the schema is 9 normalized tables instead of one flat log, and calls out that <code>requests → {routing_decisions, execution_results, quality_results}</code> are column-level FKs with no ORM <code>relationship()</code>.</p>
+<h3><code>backend/utils/yaml_config.py</code></h3>
+<p><strong>Purpose:</strong> <code>load_routing_config()</code> / <code>load_pricing_config()</code>, both <code>@lru_cache</code>d. <strong>Why it exists:</strong> Routing policy and pricing are business rules meant to change without a Python deploy. <strong>Critical operational detail:</strong> because these are <code>lru_cache</code>d at module level, <strong>a running process never sees a <code>routing.yaml</code>/<code>pricing.yaml</code> edit until restart</strong>. There is no file-watcher, no cache-busting endpoint. Editing the YAML and expecting the next request to pick it up without a restart is a common mistake new engineers make on this codebase. <strong>Interviewer question:</strong> "You edited <code>routing.yaml</code>'s <code>advanced</code> tier model and curl'd <code>/chat</code> — the old model is still being used. Why?" (<code>lru_cache</code> — the process needs a restart.)</p>
+<h3><code>backend/utils/startup_validation.py</code></h3>
+<p><strong>Purpose:</strong> <code>validate_startup_config()</code> — collects *every* config problem into one error, not just the first one found, and raises <code>StartupConfigError</code> to block boot. <strong>What it actually checks:</strong> every tier's provider is in <code>{"google", "openrouter"}</code>; every tier's model has a <code>pricing.yaml</code> entry; <code>max_output_tokens</code> is a positive int per tier; <code>confidence_thresholds.low &lt; high</code>, both in <code>[0, 1]</code>; <code>learning.min_sample_size</code> is a positive int; <code>learning.min_confidence</code> is in <code>[0, 1]</code>; <code>policy_version</code> is present. <strong>What it does NOT check:</strong> anything about API keys being valid (only that <code>.env</code> parses — a wrong-but-present API key still boots fine and fails at first real request), anything about the *classifier*'s specific fields beyond provider/model/max_output_tokens (no threshold checks on the classifier block beyond what's shared with tiers).</p>
+<h3><code>tests/conftest.py</code> and <code>tests/test_failure_paths.py</code></h3>
+<p><strong>Purpose:</strong> <code>db_session</code> fixture — fresh in-memory SQLite per test, via <code>StaticPool</code> connect args for thread-safety with FastAPI's <code>TestClient</code>. <code>test_failure_paths.py</code> monkeypatches the provider/classifier/quality- verifier dependencies with fakes (<code>_RaisingProvider</code>, <code>_WorkingProvider</code>, <code>_FakeClassifier</code>, <code>_FakeQualityVerifier</code>) to deterministically exercise every failure branch in <code>chat.py</code> without real API calls — this is your reference for "how do I test a route that calls three external LLM APIs without a network."</p>
+<hr>
+<h2 id="4-call-graph">4. Call Graph</h2>
+<h3><code>POST /chat</code> (the only endpoint with real depth)</h3>
+<div class="diagram-wrap"><pre class="mermaid">flowchart TD
+    A[&quot;POST /chat&lt;br/&gt;routers/chat.py: chat()&quot;] --&gt; B[&quot;classifier.classify(prompt)&lt;br/&gt;services/classifier_service.py&quot;]
+    B --&gt;|LLM succeeds and parses| C[&quot;RoutingDecisionOutcome&quot;]
+    B --&gt;|LLM fails or invalid JSON| D[&quot;heuristic_classifier.classify_heuristically()&quot;]
+    D --&gt; C
+    C --&gt; E[&quot;engine.select(decision)&lt;br/&gt;services/routing_engine.py&quot;]
+    E --&gt; F[&quot;RoutingResult: provider, model, tier&quot;]
+    F --&gt; G[&quot;get_provider(name, settings)&lt;br/&gt;services/providers/factory.py&quot;]
+    G --&gt; H[&quot;provider.generate(prompt, model, max_tokens)&quot;]
+    H --&gt;|exception| H1[&quot;decision_service.record_failure()&lt;br/&gt;stage=provider_call -&gt; HTTP 502&quot;]
+    H --&gt;|success| I[&quot;cost_estimator.estimate_cost()&quot;]
+    I --&gt;|exception| I1[&quot;decision_service.record_failure()&lt;br/&gt;stage=cost_estimation -&gt; HTTP 502&quot;]
+    I --&gt;|success| J{&quot;tier == ADVANCED?&quot;}
+    J --&gt;|yes: skip| K[&quot;decision_service.record()&quot;]
+    J --&gt;|no| L[&quot;quality_verifier.verify(prompt, answer)&quot;]
+    L --&gt; K
+    K --&gt;|exception| K1[&quot;decision_service.record_failure()&lt;br/&gt;stage=persistence -&gt; HTTP 500&quot;]
+    K --&gt;|success| M[&quot;ChatResponse -&gt; caller&quot;]</pre></div>
+<h3><code>GET /routing/decision/{id}</code></h3>
+<div class="diagram-wrap"><pre class="mermaid">flowchart LR
+    A[&quot;routers/decisions.py&quot;] --&gt; B[&quot;decision_service.get_decision_card(db, request_id)&quot;]
+    B --&gt; C[&quot;JOIN requests + routing_decisions + execution_results&quot;]
+    C --&gt;|no row| D[&quot;None -&gt; HTTP 404&quot;]
+    C --&gt;|row found| E[&quot;_build_reasoning_steps(decision)&lt;br/&gt;pure function, no I/O&quot;]
+    C --&gt; F[&quot;_find_matching_recommendation(db, decision)&quot;]
+    E --&gt; G[&quot;DecisionCard&quot;]
+    F --&gt; H[&quot;RecommendationSummary or None&quot;]
+    G --&gt; I[&quot;DecisionDetailResponse -&gt; caller&quot;]
+    H --&gt; I</pre></div>
+<h3><code>POST /analytics/refresh</code></h3>
+<div class="diagram-wrap"><pre class="mermaid">flowchart LR
+    A[&quot;routers/analytics.py&quot;] --&gt; B[&quot;routing_learning.refresh(db)&quot;]
+    B --&gt; C[&quot;JOIN routing_decisions + execution_results&lt;br/&gt;OUTER JOIN quality_results&lt;br/&gt;GROUP BY task_type, provider, model, tier, policy_version&quot;]
+    C --&gt; D[&quot;DELETE + INSERT routing_patterns&quot;]
+    D --&gt; E[&quot;_generate_recommendations(patterns)&quot;]
+    E --&gt; F[&quot;DELETE + INSERT optimization_recommendations&quot;]
+    F --&gt; G[&quot;db.commit() -&gt; RefreshResult&quot;]</pre></div>
+<h3><code>POST /agent/investigate</code></h3>
+<div class="diagram-wrap"><pre class="mermaid">flowchart LR
+    A[&quot;routers/agent.py&quot;] --&gt; B[&quot;routing_agent.investigate(db)&quot;]
+    B --&gt; C1[&quot;_find_degraded_task_types()&quot;]
+    B --&gt; C2[&quot;_find_expensive_task_type()&quot;]
+    B --&gt; C3[&quot;_detect_cost_anomaly()&quot;]
+    B --&gt; C4[&quot;_compare_policy_versions()&quot;]
+    B --&gt; C5[&quot;_validate_recommendations()&quot;]
+    C1 &amp; C2 &amp; C3 &amp; C4 &amp; C5 --&gt; D[&quot;findings: list[Finding]&quot;]
+    D --&gt; E[&quot;_build_suggested_actions(), _overall_risk(), _overall_confidence()&quot;]
+    E --&gt; F[&quot;INSERT investigation_reports&quot;]
+    F --&gt; G[&quot;InvestigationReport -&gt; caller&quot;]</pre></div>
+<hr>
+<h2 id="5-function-walkthrough-decision-service-record">5. Function Walkthrough — <code>decision_service.record()</code></h2>
+<p><strong>Purpose:</strong> Persist all four rows for one successful request in a single transaction. <strong>Inputs:</strong> <code>db: Session</code>, plus every field of the eventual response (<code>request_id</code>, <code>prompt</code>, <code>response</code>, <code>decision_outcome</code>, <code>routing_result</code>, <code>total_latency_ms</code>, token counts, <code>total_cost</code>, <code>provider_success</code>, <code>error_message</code>, <code>quality_verdict</code>). <strong>Outputs:</strong> <code>None</code> — this is a pure side-effecting write. <strong>Side effects:</strong> Four <code>INSERT</code>s (<code>Request</code>, <code>RoutingDecision</code>, <code>ExecutionResult</code>, conditionally <code>QualityResult</code>) and one <code>COMMIT</code>. <strong>Exceptions:</strong> Any SQLAlchemy exception (constraint violation, connection loss) propagates uncaught to the caller (<code>chat.py</code>'s <code>try/except</code>), which converts it to <code>record_failure(stage="persistence")</code> + HTTP 500. <strong>Database writes:</strong> Exactly as above — no reads. <strong>Configuration reads:</strong> <code>load_routing_config().get("policy_version", "v1.0")</code> — every <code>RoutingDecision</code> row is stamped with the currently active policy version. <strong>External API calls:</strong> None — this function is pure DB I/O. <strong>Complexity:</strong> O(1) — four fixed inserts regardless of input size. <strong>Dependencies:</strong> <code>backend.database.models</code> (four ORM classes), <code>backend.utils.yaml_config.load_routing_config</code>.</p>
+<hr>
+<h2 id="6-execution-trace-one-post-chat-request-end-to-end">6. Execution Trace — one <code>POST /chat</code> request, end to end</h2>
+<p>Prompt: <code>"Explain the CAP theorem in distributed systems"</code>.</p>
+<ol><li><strong><code>routers/chat.py: chat()</code></strong> receives <code>ChatRequest(prompt=...)</code>.</li></ol>
+<p><code>prompt = body.prompt.strip()</code>. <code>request_id = str(uuid.uuid4())</code>, e.g. <code>"a1b2c3..."</code>. <code>start = time.perf_counter()</code>.</p>
+<ol><li><strong><code>classifier.classify(prompt)</code></strong> is called.</li></ol>
+<p><code>ClassifierService.classify()</code> tries <code>_classify_with_llm(prompt)</code>: builds a JSON-only prompt via <code>_build_classifier_prompt()</code>, calls <code>OpenRouterProvider.generate()</code> against <code>mistralai/mistral-small-3.2-24b-instruct</code> with <code>response_format="json_object"</code>. Say the model returns <code>{"routing_tier": "STANDARD", "task_type": "Explanation", "reasoning_level": "Medium", "confidence": 0.82, "reason": "..."}</code>. <code>json.loads()</code> + <code>RoutingDecision.model_validate()</code> succeed. No fallback needed. Returns <code>RoutingDecisionOutcome(decision=..., cost=~$0.0001, fallback_used=False)</code>.</p>
+<ol><li><strong><code>engine.select(decision)</code></strong> is called. <code>confidence_thresholds.low</code> is</li></ol>
+<p><code>0.6</code>; <code>0.82 &gt;= 0.6</code>, so no escalation. <code>tier_config = self._config["tiers"]["standard"]</code> → <code>{provider: openrouter, model: mistralai/mistral-small-3.2-24b-instruct, max_output_tokens: 1536, reasons: [...]}</code>. Returns <code>RoutingResult(provider="openrouter", model="mistralai/mistral-small-3.2-24b-instruct", tier=STANDARD, escalated=False, ...)</code>.</p>
+<ol><li><strong><code>get_provider("openrouter", settings)</code></strong> returns an</li></ol>
+<p><code>OpenRouterProvider</code> instance (constructed fresh per call — no caching at this layer, unlike <code>ClassifierService</code>).</p>
+<ol><li><strong><code>provider.generate(prompt, model, max_tokens=1536)</code></strong> — a real</li></ol>
+<p><code>httpx.post</code> to <code>https://openrouter.ai/api/v1/chat/completions</code>, no <code>response_format</code> this time (regular chat answer, not structured output). Returns <code>ProviderResponse(text="CAP theorem states...", input_tokens=12, output_tokens=340)</code>.</p>
+<ol><li><strong><code>estimate_cost("mistralai/mistral-small-3.2-24b-instruct", 12, 340)</code></strong></li></ol>
+<p>— reads <code>pricing.yaml</code>: <code>input_per_million=0.10</code>, <code>output_per_million=0.30</code>. <code>(12/1e6)*0.10 + (340/1e6)*0.30 = 0.0000012 + 0.000102 = 0.0001032</code>, rounded to 8 decimals.</p>
+<ol><li><strong><code>total_cost = round(model_cost + decision_outcome.cost, 8)</code></strong> — sums</li></ol>
+<p>the classifier's own tiny cost with the answer model's cost. <code>total_latency_ms = round((time.perf_counter() - start) * 1000, 2)</code>.</p>
+<ol><li><strong>Tier check:</strong> <code>routing_result.tier != RoutingTier.ADVANCED</code> is <code>True</code></li></ol>
+<p>(it's STANDARD), so <strong><code>quality_verifier.verify(prompt, answer)</code></strong> runs — another OpenRouter call, this time to the same Mistral model as judge, asking <code>{"passed": true|false, "reason": "..."}"</code>. Say it returns <code>QualityVerdict(passed=True, reason="Correctly explains CAP theorem")</code>.</p>
+<ol><li><strong><code>decision_service.record(...)</code></strong> — inside one transaction: `INSERT</li></ol>
+<p>requests<code> (prompt, response, </code>normalized_prompt<code>, </code>prompt_hash<code> = SHA-256 of the normalized prompt), </code>db.flush()<code>, </code>INSERT routing_decisions<code> (classifier_tier=STANDARD, final_tier=STANDARD, confidence=0.82, task_type="Explanation", selected_provider="openrouter", selected_model="mistralai/...", routing_policy_version="v1.0", escalation_reason=None), </code>INSERT execution_results<code> (latency, token counts, </code>estimated_cost=total_cost<code>), </code>INSERT quality_results<code> (verdict=True, reasoning), </code>db.commit()`.</p>
+<ol><li><strong>Response construction:</strong> <code>chat()</code> builds and returns <code>ChatResponse</code></li></ol>
+<p>with every field pulled from the objects computed in steps 2–9 — no additional DB read, everything is still in memory from the pipeline that just ran.</p>
+<ol><li>Nginx forwards the JSON to Streamlit, which renders the answer plus</li></ol>
+<p>the routing metadata panel (tier, provider, model, cost, confidence).</p>
+<p>No retries occurred anywhere in this trace. No caching occurred anywhere in this trace (aside from the <code>lru_cache</code>d YAML/config singletons, which are per-process, not per-request). No background task or queue was involved — step 9's commit happens synchronously, in-request, before the HTTP response is returned.</p>
+<hr>
+<h2 id="7-variable-journey-prompt">7. Variable Journey — <code>prompt</code></h2>
+<div class="diagram-wrap"><pre class="mermaid">flowchart LR
+    A[&quot;body.prompt&lt;br/&gt;raw ChatRequest field&quot;] --&gt; B[&quot;prompt = body.prompt.strip()&lt;br/&gt;chat.py&quot;]
+    B --&gt; C[&quot;classifier prompt&lt;br/&gt;_build_classifier_prompt(prompt)&lt;br/&gt;wraps the SAME string in a routing instruction&quot;]
+    B --&gt; D[&quot;provider prompt&lt;br/&gt;passed unmodified to provider.generate()&lt;br/&gt;as the actual chat prompt&quot;]
+    B --&gt; E[&quot;normalized_prompt&lt;br/&gt;decision_service._normalize_prompt()&lt;br/&gt;= &#x27; &#x27;.join(prompt.lower().split())&quot;]
+    E --&gt; F[&quot;prompt_hash&lt;br/&gt;sha256(normalized_prompt).hexdigest()&quot;]
+    B --&gt; G[&quot;requests.prompt column&lt;br/&gt;stored verbatim, NOT normalized&quot;]
+    D --&gt; H[&quot;provider_response.text&lt;br/&gt;the model&#x27;s answer, a DIFFERENT variable&quot;]
+    H --&gt; I[&quot;quality_verifier prompt&lt;br/&gt;_build_verdict_prompt(prompt, response)&lt;br/&gt;original prompt reused again, third time&quot;]</pre></div>
+<p>The same in-memory string <code>prompt</code> is reused three separate times as input to three separate LLM calls (classifier, answer generation, quality judge) — it is never mutated, only wrapped in different instruction templates. <code>normalized_prompt</code> and <code>prompt_hash</code> are the only derived forms, and they exist purely for future duplicate-detection/analytics use (nothing in the current codebase queries <code>prompt_hash</code> — it's indexed but unused beyond storage; a fair thing to flag as unused infrastructure in Section 16).</p>
+<hr>
+<h2 id="8-object-lifecycle">8. Object Lifecycle</h2>
+<div class="table-wrap"><table><thead><tr><th>Object</th><th>Created</th><th>Modified by</th><th>Read by</th><th>Destroyed</th></tr></thead><tbody><tr><td><code>ChatRequest</code></td><td>FastAPI, parsing the HTTP body</td><td>Never (immutable Pydantic model)</td><td><code>chat()</code></td><td>Garbage collected after <code>chat()</code> returns</td></tr><tr><td><code>RoutingDecision</code></td><td><code>RoutingDecision.model_validate(data)</code> in <code>classifier_service._classify_with_llm</code>, OR <code>classify_heuristically()</code></td><td>Never</td><td><code>routing_engine.select()</code>, <code>decision_service.record()</code></td><td>GC'd after the request; never persisted as an object, only its field values</td></tr><tr><td><code>RoutingDecisionOutcome</code></td><td><code>classifier_service.classify()</code></td><td>Never</td><td><code>chat()</code>, <code>decision_service.record()</code></td><td>GC'd after the request</td></tr><tr><td><code>RoutingResult</code></td><td><code>routing_engine.select()</code></td><td>Never</td><td><code>chat()</code>, <code>decision_service.record()</code></td><td>GC'd after the request</td></tr><tr><td><code>ProviderResponse</code></td><td>Inside each provider's <code>generate()</code></td><td>Never</td><td><code>chat()</code> (cost estimation, <code>decision_service.record()</code>, response construction)</td><td>GC'd after the request</td></tr><tr><td><code>DecisionCard</code></td><td><code>decision_service.get_decision_card()</code>, on every <code>GET /routing/decision/{id}</code> call</td><td>Never</td><td>The router, serialized to JSON</td><td>GC'd after the request — <strong>never persisted</strong>; rebuilt from scratch on every read</td></tr></tbody></table></div>
+<hr>
+<h2 id="9-database-walkthrough">9. Database Walkthrough</h2>
+<div class="table-wrap"><table><thead><tr><th>Table</th><th>Inserted by</th><th>Updated by</th><th>Read by</th><th>Deleted by</th></tr></thead><tbody><tr><td><code>requests</code></td><td><code>decision_service.record()</code></td><td>Never</td><td><code>history_service</code>, <code>decision_service.get_decision_card()</code>, <code>stats_service</code> (indirectly via joins), <code>investigation_service</code> via <code>routing_agent._detect_cost_anomaly</code></td><td>Never</td></tr><tr><td><code>routing_decisions</code></td><td><code>decision_service.record()</code></td><td>Never</td><td><code>history_service</code>, <code>analytics_service</code>, <code>routing_learning.refresh()</code>, <code>decision_service.get_decision_card()</code>, <code>routing_agent.py</code></td><td>Never</td></tr><tr><td><code>execution_results</code></td><td><code>decision_service.record()</code></td><td>Never</td><td>Same as <code>routing_decisions</code></td><td>Never</td></tr><tr><td><code>quality_results</code></td><td><code>decision_service.record()</code>, conditionally (skipped for ADVANCED tier)</td><td>Never</td><td><code>history_service</code>, <code>analytics_service</code> (via <code>PASS_RATE</code>), <code>routing_learning.refresh()</code></td><td>Never</td></tr><tr><td><code>failed_requests</code></td><td><code>decision_service.record_failure()</code></td><td>Never</td><td>Nothing in the current codebase queries this table back — it's audit-only, write-and-forget from the app's perspective (a fair Section 16 flag: no <code>GET /failures</code> endpoint exists)</td><td>Never</td></tr><tr><td><code>routing_policies</code></td><td><code>scripts/bootstrap_db.py</code> only (once, manually)</td><td>Never</td><td>Nothing currently reads it back at runtime — it's a seeded audit snapshot</td><td>Never</td></tr><tr><td><code>routing_patterns</code></td><td><code>routing_learning.refresh()</code></td><td>Never (wholesale delete+reinsert, not update)</td><td><code>analytics_service.get_patterns()</code>, <code>routing_agent.py</code> (five different finding functions)</td><td><code>routing_learning.refresh()</code> — <code>db.query(RoutingPattern).delete()</code> before every reinsert</td></tr><tr><td><code>optimization_recommendations</code></td><td><code>routing_learning.refresh()</code></td><td>Never (wholesale delete+reinsert)</td><td><code>analytics_service.get_recommendations()</code>, <code>decision_service._find_matching_recommendation()</code>, <code>routing_agent._validate_recommendations()</code></td><td><code>routing_learning.refresh()</code> — same delete-then-reinsert pattern</td></tr><tr><td><code>investigation_reports</code></td><td><code>routing_agent.investigate()</code></td><td>Never</td><td><code>investigation_service.get_report()</code> / <code>list_reports()</code></td><td>Never</td></tr></tbody></table></div>
+<p><strong>Why no table is ever updated:</strong> every table above is either append-only (an immutable audit fact — a request happened, a failure happened, an investigation ran) or a full-recompute snapshot (<code>routing_patterns</code>/<code>optimization_recommendations</code>, deliberately delete-and-reinsert rather than incremental upsert — see the "why" in <code>routing_learning.py</code>'s docstring about revisiting this at scale).</p>
+<p><strong>Complete CRUD flow for <code>routing_patterns</code> + <code>optimization_recommendations</code>:</strong> <code>POST /analytics/refresh</code> is the only write trigger. It's manual — no cron, no scheduler, nothing in this codebase calls it automatically. Read happens three ways: the analytics dashboard (<code>GET /analytics/patterns</code>, <code>GET /analytics/recommendations</code>), a live request's Decision Card (<code>decision_service._find_matching_recommendation</code> — exact attribute match, no FK), and the agent's own re-validation (<code>routing_agent._validate_recommendations</code>, which re-derives fresh numbers from the raw tables rather than trusting the pattern snapshot — see Section 15 for why that distinction matters).</p>
+<hr>
+<h2 id="10-configuration-walkthrough">10. Configuration Walkthrough</h2>
+<p><strong><code>.env</code> → <code>Settings</code>:</strong> <code>backend/utils/config.py</code>'s <code>Settings(BaseSettings)</code> reads <code>.env</code> via <code>pydantic-settings</code>. <code>get_settings()</code> is <code>@lru_cache</code>d — parsed once per process. Fields: <code>google_api_key</code>, <code>openrouter_api_key</code>, <code>database_url</code>, <code>log_level</code>, <code>easy_max_words</code>, <code>medium_max_words</code>.</p>
+<p><strong><code>routing.yaml</code>/<code>pricing.yaml</code> → cached dicts:</strong> <code>backend/utils/yaml_config.py</code>'s <code>load_routing_config()</code> / <code>load_pricing_config()</code>, both <code>@lru_cache</code>d, both reading straight off disk via <code>yaml.safe_load()</code>. <strong>Never reloaded during the life of a process</strong> — this is the single most important operational fact about this codebase's config system. Change <code>routing.yaml</code>, and every running worker keeps using the old values until restarted. There is no <code>/admin/reload-config</code> endpoint, no file-watcher, no TTL.</p>
+<p><strong>Who reads what:</strong></p>
+<ul><li><code>Settings</code> → <code>database/db.py</code> (connection string), <code>providers/factory.py</code></li></ul>
+<p>(API keys), <code>heuristic_classifier.py</code> (word thresholds), <code>main.py</code> (log level).</p>
+<ul><li><code>routing.yaml</code> → <code>routing_engine.py</code> (tiers, thresholds),</li></ul>
+<p><code>classifier_service.py</code> (classifier provider/model), <code>quality_verifier.py</code> (judge model — reuses the classifier's config block), <code>routing_learning.py</code> / <code>routing_agent.py</code> (<code>min_sample_size</code>), <code>decision_service.record()</code> (<code>policy_version</code> stamp), <code>routers/models.py</code> (read-only passthrough).</p>
+<ul><li><code>pricing.yaml</code> → <code>cost_estimator.py</code> only, plus</li></ul>
+<p><code>startup_validation.py</code> cross-checking every configured model has a pricing entry.</p>
+<p><strong>Startup validation order:</strong> <code>main.py</code>'s <code>lifespan()</code> calls <code>validate_startup_config()</code> *before* the app starts serving. If it raises, the process never comes up — no partial availability.</p>
+<hr>
+<h2 id="11-service-deep-dive-routing-learning-py">11. Service Deep Dive — <code>routing_learning.py</code></h2>
+<p><strong>Responsibilities:</strong> Recompute <code>routing_patterns</code> from raw history; generate <code>optimization_recommendations</code> by comparing each tier's *currently configured* model against better-performing alternatives. <strong>Collaborators:</strong> <code>query_helpers.PASS_RATE</code> (shared SQL fragment), <code>utils.yaml_config.load_routing_config</code> (for <code>min_sample_size</code> and the current tier config). <strong>Internal workflow:</strong> One grouped query over <code>routing_decisions JOIN execution_results OUTER JOIN quality_results</code>, grouped by <code>(task_type, task_subcategory, provider, model, tier, policy_version)</code>. Wholesale <code>DELETE</code> + reinsert into <code>routing_patterns</code>. Then <code>_generate_recommendations()</code>: for each <code>(task_type, tier)</code> under the *current* <code>policy_version</code> only, find the pattern matching the currently-configured <code>(provider, model)</code>, then look for candidate patterns with <code>sample_size &gt;= min_sample_size</code> and a strictly higher <code>pass_rate</code>; pick the single best one; build one <code>OptimizationRecommendation</code>. <strong>Public methods:</strong> <code>refresh(db) -&gt; RefreshResult</code>. <strong>Private methods:</strong> <code>_generate_recommendations()</code>, <code>_build_recommendation()</code>. <strong>Important algorithm detail:</strong> recommendations are restricted to the current <code>policy_version</code> on purpose — comparing across policy epochs would compare a pattern against a model config that's no longer even active, producing a "recommendation" the current policy never earned. This is explicitly called out in the function's docstring. <strong>Potential improvements (from the code's own comments, not invented):</strong> the module docstring flags this as O(n) full-table scan on every refresh, fine at current scale, and suggests an incremental upsert keyed by the same group columns if <code>routing_decisions</code> grows into the hundreds of thousands of rows.</p>
+<hr>
+<h2 id="12-provider-deep-dive">12. Provider Deep Dive</h2>
+<div class="diagram-wrap"><pre class="mermaid">classDiagram
+    class LLMProvider {
+        &lt;&lt;abstract&gt;&gt;
+        +generate(prompt, model, max_tokens, response_format) ProviderResponse
+    }
+    class GeminiProvider {
+        -api_key
+        +generate(...) ProviderResponse
+    }
+    class OpenRouterProvider {
+        -api_key
+        +generate(...) ProviderResponse
+    }
+    LLMProvider &lt;|.. GeminiProvider
+    LLMProvider &lt;|.. OpenRouterProvider</pre></div>
+<p><code>factory.get_provider(name, settings)</code> is a plain function with an <code>if name == "google": ... if name == "openrouter": ... raise ValueError</code> body — explicitly *not* a registry pattern or a Factory class, per its own docstring ("ceremony for two providers"). This is dependency inversion in its simplest possible form: every caller (<code>chat.py</code>, <code>classifier_service</code>, <code>quality_verifier</code>) depends on the <code>LLMProvider</code> interface, never on <code>GeminiProvider</code>/<code>OpenRouterProvider</code> directly. Polymorphism happens at exactly one call site per caller: <code>provider.generate(...)</code> — the caller never branches on which concrete class it holds. Adding a third provider means writing one new class satisfying <code>LLMProvider</code> and adding one line to <code>factory.py</code>'s <code>if</code> chain; zero changes required in <code>chat.py</code>, <code>routing_engine.py</code>, <code>classifier_service.py</code>, or <code>quality_verifier.py</code>.</p>
+<hr>
+<h2 id="13-error-handling-walkthrough">13. Error Handling Walkthrough</h2>
+<div class="diagram-wrap"><pre class="mermaid">flowchart TD
+    A[&quot;POST /chat&quot;] --&gt; B[&quot;classify() / select()&quot;]
+    B --&gt;|&quot;exception here&quot;| B1[&quot;UNCAUGHT -&gt; HTTP 500 with traceback&lt;br/&gt;(deliberate: this is a programming bug,&lt;br/&gt;not a degraded external dependency —&lt;br/&gt;see chat.py&#x27;s module docstring)&quot;]
+    B --&gt; C[&quot;provider.generate()&quot;]
+    C --&gt;|exception| C1[&quot;record_failure(stage=provider_call) -&gt; HTTP 502&quot;]
+    C --&gt;|ok| D[&quot;estimate_cost()&quot;]
+    D --&gt;|exception, e.g. model not in pricing.yaml| D1[&quot;record_failure(stage=cost_estimation) -&gt; HTTP 502&quot;]
+    D --&gt;|ok| E[&quot;quality_verifier.verify()&quot;]
+    E --&gt;|&quot;exception INSIDE verify()&quot;| E1[&quot;caught internally, returns None&lt;br/&gt;— never reaches chat.py&quot;]
+    E --&gt; F[&quot;decision_service.record()&quot;]
+    F --&gt;|exception| F1[&quot;record_failure(stage=persistence) -&gt; HTTP 500&quot;]
+    F --&gt;|ok| G[&quot;200 ChatResponse&quot;]</pre></div>
+<p><strong>Validation errors:</strong> Handled by FastAPI/Pydantic before <code>chat()</code> ever runs — <code>ChatRequest.prompt</code> has <code>min_length=1, max_length=8000</code>; a violation is an automatic HTTP 422, never reaches application code.</p>
+<p><strong>Provider errors:</strong> Caught in <code>chat.py</code>, logged, recorded via <code>record_failure(stage="provider_call")</code>, re-raised as HTTP 502.</p>
+<p><strong>Database failures:</strong> Caught around <code>decision_service.record()</code> in <code>chat.py</code>; <code>record_failure</code> itself has its own inner try/except that <strong>must never raise</strong> (it's called from an exception handler) — a failure to write the failure record is logged at <code>CRITICAL</code> and swallowed, not re-raised, since re-raising here would mask the original error the caller is trying to report.</p>
+<p><strong>Configuration failures:</strong> Caught nowhere at request time by design — <code>startup_validation.py</code> is meant to catch these at boot, before the app ever serves a request that could hit a bad config path.</p>
+<p><strong>HTTP exceptions:</strong> <code>HTTPException(status_code=502, ...)</code> / <code>HTTPException(status_code=500, ...)</code> / <code>HTTPException(status_code=404, ...)</code> (in <code>decisions.py</code>, <code>agent.py</code>) — FastAPI converts these to the matching HTTP response.</p>
+<p><strong>Rollback behaviour:</strong> <code>record_failure()</code> calls <code>db.rollback()</code> *before* inserting the <code>FailedRequest</code> row — this discards any partial state from whatever failed mid-transaction before writing the audit record on a clean session.</p>
+<p><strong>Failure recording — the one gap:</strong> an exception during classification or routing selection itself is *not* recorded as a <code>failed_requests</code> row. <code>chat.py</code>'s own module docstring explains why: those are pure, in-process logic with no external call that can legitimately fail — an exception there is a real bug, not a degraded dependency, and should surface as a 500 with a full traceback rather than be silently swallowed into an audit row that implies "an external thing failed."</p>
+<hr>
+<h2 id="14-design-patterns">14. Design Patterns</h2>
+<div class="table-wrap"><table><thead><tr><th>Pattern</th><th>Where</th><th>Why</th><th>Trade-off</th></tr></thead><tbody><tr><td><strong>Dependency Inversion / Strategy</strong></td><td><code>services/providers/</code> — <code>LLMProvider</code> ABC, two concrete implementations, callers depend only on the interface</td><td>Swap or add a model provider without touching routing/chat logic</td><td>None significant at 2 providers; would need <code>factory.py</code> to grow past an <code>if</code> chain at ~5+ providers</td></tr><tr><td><strong>Factory function (not Factory pattern)</strong></td><td><code>providers/factory.py</code></td><td>Deliberately simpler than a class-based registry — see its own docstring</td><td>Doesn't scale gracefully past a handful of providers, but that's an explicit, acknowledged trade-off, not an oversight</td></tr><tr><td><strong>Dependency Injection</strong></td><td>FastAPI <code>Depends(get_db)</code>, <code>Depends(get_settings)</code>, <code>Depends(get_classifier_service)</code>, etc. in every router</td><td>Testability (see <code>test_failure_paths.py</code>'s dependency overrides) and per-process singleton caching via <code>@lru_cache</code></td><td>Standard FastAPI idiom, no real downside here</td></tr><tr><td><strong>Facade</strong></td><td><code>decision_service.record()</code> — one call hides four inserts + a flush + a commit</td><td>Callers (<code>chat.py</code>) don't need to know the schema is four tables</td><td>None</td></tr><tr><td><strong>Read/write service split</strong></td><td><code>analytics_service.py</code> (read) vs <code>routing_learning.py</code> (write); <code>investigation_service.py</code> (read) vs <code>routing_agent.py</code> (write)</td><td>Explicit, repeated convention across the codebase — makes "what can write to this table" a one-file question</td><td>None; this is a clean convention</td></tr><tr><td><strong>Snapshot table over incremental update</strong></td><td><code>routing_patterns</code>, <code>optimization_recommendations</code> — wholesale delete+reinsert on every <code>refresh()</code></td><td>Simpler correctness reasoning (no partial-update bugs) at current scale</td><td>Acknowledged O(n) cost at scale — see Section 11</td></tr></tbody></table></div>
+<p><strong>Not implemented (and this document won't pretend otherwise):</strong> Repository pattern (routers/services talk to SQLAlchemy directly via <code>Session</code>), Observer pattern, Decorator pattern (beyond <code>@lru_cache</code>/<code>@abstractmethod</code>, which are stdlib, not application-level), Template Method, unit-of-work abstraction beyond a plain <code>Session</code>.</p>
+<hr>
+<h2 id="15-engineering-decisions">15. Engineering Decisions</h2>
+<p><strong>Why a normalized database (4+ tables) instead of one flat log table?</strong> Historical analytics and policy comparison (PR2/PR3, per the models.py docstring) need to query "just the routing decision" or "just the cost" without scanning a denormalized blob. One row per lifecycle stage means a query about that stage touches exactly the table it needs.</p>
+<p><strong>Why provider abstraction for exactly two providers?</strong> Cheap insurance — one interface, two implementations, zero cost today, and a third provider later is one new file, not a refactor of <code>chat.py</code>/<code>routing_engine.py</code>.</p>
+<p><strong>Why <code>routing.yaml</code> instead of hardcoded tier→model mapping in Python?</strong> Routing policy is a business decision (which model handles which complexity tier) that changes independently of code — a YAML edit + restart vs. a full deploy cycle.</p>
+<p><strong>Why is the learning system advisory-only (never auto-applies a recommendation)?</strong> <code>routing.yaml</code>'s own comment on the <code>learning:</code> block is explicit: neither <code>min_sample_size</code>/<code>min_confidence</code> nor <code>apply_recommendations</code> ever changes what <code>routing.yaml</code>'s tiers route to — only a human bumping <code>policy_version</code> does. This is a deliberate "human-in-the-loop" safety choice for a system making cost/quality trade-offs — auto-applying a recommendation based on a possibly-small or stale sample could silently degrade answer quality with no review step.</p>
+<p><strong>Why is the Routing Optimization Agent deterministic SQL, not an LLM reasoning loop?</strong> <code>routing_agent.py</code>'s module docstring states this directly: an LLM would add cost, latency, and a chain-of-thought exposure risk for a job five SQL queries already do exactly and reproducibly. The five checks (<code>_find_degraded_task_types</code>, <code>_find_expensive_task_type</code>, <code>_detect_cost_anomaly</code>, <code>_compare_policy_versions</code>, <code>_validate_recommendations</code>) are all fixed-threshold arithmetic over existing tables — "agentic" here means "a fixed, inspectable pipeline," not "an LLM deciding what to check next."</p>
+<p><strong>Why does <code>_validate_recommendations</code> re-query live tables instead of trusting <code>routing_patterns</code>?</strong> <code>routing_agent.py</code>'s <code>_live_stats()</code> docstring explains: <code>routing_patterns</code> is only as fresh as the last <code>POST /analytics/refresh</code>, but live traffic keeps accumulating in <code>routing_decisions</code> in the meantime. Re-deriving straight from the raw tables makes validation meaningful rather than circular — checking a recommendation against fresh reality, not against the same snapshot it was generated from.</p>
+<p><strong>Why is <code>DecisionCard</code> reconstructed on every read instead of stored?</strong> <code>decision_service.py</code>'s module docstring: storing it as a parallel JSON blob "would duplicate the same facts twice with no independent value" — <code>routing_decisions</code> + <code>execution_results</code> (joined) are the single source of truth.</p>
+<hr>
+<h2 id="16-code-smells">16. Code Smells</h2>
+<ul><li><strong><code>prompt_hash</code> is written but never read.</strong> <code>decision_service._prompt_hash()</code></li></ul>
+<p>computes and indexes a SHA-256 hash on every request, but no query in the codebase (checked every service file) ever filters or joins on it. It reads like planned-but-unbuilt duplicate-detection infrastructure.</p>
+<ul><li><strong><code>failed_requests</code> has no read endpoint.</strong> Every failure is faithfully</li></ul>
+<p>recorded, but there's no <code>GET /failures</code> router — the audit trail exists only for someone to query the database directly. If failure visibility matters for on-call, this is the gap.</p>
+<ul><li>**<code>routing_policies</code> is written once by <code>bootstrap_db.py</code> and never read</li></ul>
+<p>back at runtime.** It's seeded audit data with no current consumer in <code>backend/</code> — likely intended for a future "which policy was active on date X" view that doesn't exist yet.</p>
+<ul><li>**O(n) full scans in <code>routing_learning.refresh()</code> and every finding</li></ul>
+<p>function in <code>routing_agent.py</code>.** Explicitly acknowledged as fine at current scale in the code's own comments — flagged here per the module's own admission, not a new discovery.</p>
+<ul><li><strong><code>decision_service.py</code> mixes an import in the middle of the file</strong></li></ul>
+<p>(<code>logger = logging.getLogger(__name__)</code> sits between the model imports and the schema imports, breaking the usual all-imports-at-top convention) — cosmetic, but worth a quick cleanup if you're already editing this file.</p>
+<ul><li>**<code>history_service.py</code>'s <code>HistoryItem</code> construction hardcodes</li></ul>
+<p><code>reasoning_level=""</code>, <code>classifier_model=""</code>, <code>classifier_cost=0.0</code>, <code>fallback_used=False</code>** — these fields exist on <code>ChatResponse</code> but aren't persisted anywhere per-request (no <code>RoutingDecision</code> column captures them), so history reconstructs them as empty/default rather than real values. Not a bug — <code>HistoryItem</code>'s schema currently promises fields the stored data can't actually supply.</p>
+<ul><li><strong>No coupling problems worth flagging beyond the above</strong> — the read/write</li></ul>
+<p>service split (Section 14) keeps most of the codebase cleanly separated.</p>
+<hr>
+<h2 id="17-interview-questions">17. Interview Questions</h2>
+<p>*(Grounded entirely in this implementation — every answer should be verifiable by pointing at a specific file/line.)*</p>
+<h3>Beginner</h3>
+<ol><li>What does <code>POST /chat</code> return if <code>prompt</code> is an empty string?</li><li>Which file defines the FastAPI app object?</li><li>What are the three routing tiers, and where are they defined as an enum?</li><li>Which service is responsible for turning a <code>RoutingDecision</code> into a</li></ol>
+<p><code>RoutingResult</code>?</p>
+<ol><li>What does <code>LLMProvider.generate()</code> return?</li><li>Name the two concrete <code>LLMProvider</code> implementations.</li><li>Which config file defines per-model pricing?</li><li>What HTTP status code does a provider failure produce?</li><li>What table stores the raw prompt and response text?</li><li>Is <code>quality_verifier.verify()</code> called for every request?</li><li>What triggers <code>routing_learning.refresh()</code> — is it scheduled?</li><li>What does <code>get_settings()</code> read from?</li><li>Where is <code>DATABASE_URL</code> configured?</li><li>What does <code>/health</code> return?</li><li>Which router owns <code>GET /history</code>?</li><li>What Python package provides <code>BaseSettings</code>?</li><li>What does <code>strip_json_fence()</code> do, and why does it exist?</li><li>Which two tables does <code>HistoryItem</code> NOT necessarily have data from?</li><li>What HTTP status does <code>GET /routing/decision/{id}</code> return for an</li></ol>
+<p>unknown <code>request_id</code>?</p>
+<ol><li>What is <code>request_id</code>, and how is it generated?</li><li>Which file contains the SQLAlchemy <code>Base</code> class?</li><li>What does <code>bootstrap_db.py</code> do that <code>main.py</code>'s startup does not?</li><li>Is there a retry mechanism on provider calls? Where would you look to</li></ol>
+<p>confirm?</p>
+<ol><li>What does <code>estimate_cost()</code> need as input?</li><li>Which class wraps the Google Generative AI SDK?</li></ol>
+<h3>Intermediate</h3>
+<ol><li>Walk through what happens when the LLM classifier returns malformed</li></ol>
+<p>JSON.</p>
+<ol><li>Why does <code>decision_service.record()</code> call <code>db.flush()</code> after inserting</li></ol>
+<p><code>Request</code> but before the other three inserts?</p>
+<ol><li>Explain the confidence-escalation bug that was fixed in</li></ol>
+<p><code>heuristic_classifier.py</code>, and why the fix works.</p>
+<ol><li>What's the difference between <code>RoutingDecision</code> and</li></ol>
+<p><code>RoutingDecisionOutcome</code>?</p>
+<ol><li>Why is <code>quality_verifier.verify()</code> skipped for the ADVANCED tier?</li><li>What happens if you edit <code>routing.yaml</code> while the app is running — does</li></ol>
+<p>the next request see the change? Why or why not?</p>
+<ol><li>Trace what happens if <code>decision_service.record()</code> raises after a</li></ol>
+<p>successful provider call.</p>
+<ol><li>Why does <code>record_failure()</code> catch its own exceptions internally?</li><li>What's the relationship (if any — literally, in the ORM) between</li></ol>
+<p><code>requests</code> and <code>routing_decisions</code>?</p>
+<ol><li>Why does <code>_validate_recommendations()</code> in <code>routing_agent.py</code> query raw</li></ol>
+<p>tables instead of <code>routing_patterns</code>?</p>
+<ol><li>What does <code>PASS_RATE</code> in <code>query_helpers.py</code> do with rows that have no</li></ol>
+<p><code>quality_results</code> entry, and why does that matter?</p>
+<ol><li>Explain how <code>optimization_recommendations</code> gets matched to a live</li></ol>
+<p>Decision Card — is it a foreign key?</p>
+<ol><li>What does <code>_next_tier()</code> return for a decision already at ADVANCED</li></ol>
+<p>tier with low confidence? What actually happens as a result?</p>
+<ol><li>Why is <code>routing_learning.refresh()</code>'s recommendation generation scoped</li></ol>
+<p>to the *current* <code>policy_version</code> only?</p>
+<ol><li>What's the purpose of the <code>escalation_reason</code> column, and when is it</li></ol>
+<p>NULL?</p>
+<ol><li>How would you add a new routing tier (e.g. <code>PREMIUM</code>)? List every file</li></ol>
+<p>that would need to change.</p>
+<ol><li>What's the difference in how <code>factory.py</code> and a "real" Factory pattern</li></ol>
+<p>class would differ, and why did this codebase choose the simpler form?</p>
+<ol><li>Why does <code>startup_validation.py</code> collect all errors before raising</li></ol>
+<p>instead of raising on the first one?</p>
+<ol><li>What does <code>_build_reasoning_steps()</code> in <code>decision_service.py</code> depend</li></ol>
+<p>on — is any of it LLM-generated at read time?</p>
+<ol><li>Explain the difference between <code>record()</code> and <code>record_failure()</code> in</li></ol>
+<p>terms of what tables they touch.</p>
+<ol><li>Why does <code>GeminiProvider</code> and <code>OpenRouterProvider</code> both need to</li></ol>
+<p>normalize into the same <code>ProviderResponse</code> shape?</p>
+<ol><li>What's the practical effect of <code>@lru_cache</code> on <code>get_classifier_service()</code></li></ol>
+<p>across concurrent requests?</p>
+<ol><li>How does <code>chat.py</code> know how much the *classifier* call cost, separately</li></ol>
+<p>from the *answer* model's cost?</p>
+<ol><li>What would break if <code>pricing.yaml</code> were missing an entry for a model</li></ol>
+<p>listed in <code>routing.yaml</code>'s tiers — when would you find out?</p>
+<ol><li>Describe the full lifecycle of a <code>RoutingPattern</code> row from creation to</li></ol>
+<p>being read by the frontend.</p>
+<h3>Advanced</h3>
+<ol><li><code>routing_decisions.routing_policy_version</code> has no foreign key to</li></ol>
+<p><code>routing_policies.version</code>. What operational risk does that create, and how would you detect it happening in practice?</p>
+<ol><li><code>_find_matching_recommendation()</code> matches by exact attribute equality</li></ol>
+<p>across five columns, with no FK. Design a scenario where this silently fails to match a recommendation that a human would expect to see.</p>
+<ol><li>The heuristic classifier's confidence bug (Section 15) existed because</li></ol>
+<p>two independently-reasonable pieces of logic (a fallback signaling low trust via low confidence, and an escalation threshold) interacted badly. What's a general strategy for catching this class of bug via tests before it reaches production?</p>
+<ol><li><code>routing_learning.refresh()</code> is O(n) over <code>routing_decisions</code> on every</li></ol>
+<p>call and does a full delete+reinsert of <code>routing_patterns</code>. Design the incremental-upsert alternative the code's own comment gestures at — what would the upsert key be, and what statistics can't be incrementally maintained without extra state (hint: think about what <code>average_cost</code> needs to stay correct)?</p>
+<ol><li><code>decision_service.record()</code>'s four inserts happen in one transaction</li></ol>
+<p>with no ORM relationships. If you added a <code>relationship()</code> between <code>Request</code> and its three children, would you still need the explicit <code>db.flush()</code>? Why or why not?</p>
+<ol><li><code>investigation_service</code> and <code>routing_agent</code> are read/write split, same</li></ol>
+<p>as <code>analytics_service</code>/<code>routing_learning</code>. Is this convention enforced anywhere (a lint rule, a test), or purely by developer discipline? What would you add to enforce it?</p>
+<ol><li><code>startup_validation.py</code> checks that every tier's model has a</li></ol>
+<p><code>pricing.yaml</code> entry, but does NOT verify the API key for that provider is actually valid. Design a startup check that would catch an invalid-but-present API key without making a real (costly) API call on every boot.</p>
+<ol><li><code>_detect_cost_anomaly()</code> in <code>routing_agent.py</code> compares the latest day's</li></ol>
+<p>cost-per-request against the average of *all* prior days, unweighted by volume. Construct a low-volume day that would trigger a false-positive anomaly finding, and propose a fix.</p>
+<ol><li>The provider abstraction (<code>LLMProvider</code>) has no <code>stream()</code> method and no</li></ol>
+<p>built-in retry/backoff. If you added streaming support, what would have to change in <code>chat.py</code>'s current fully-synchronous request/response model, given quality verification and cost estimation currently depend on having the complete response text and token counts?</p>
+<ol><li><code>routing_agent._validate_recommendations()</code> re-derives "live" stats</li></ol>
+<p>from <code>routing_decisions</code>/<code>execution_results</code>/<code>quality_results</code> rather than trusting <code>routing_patterns</code>. Is this query more or less expensive than the equivalent <code>routing_patterns</code> lookup, and at what data volume would that difference start to matter operationally?</p>
+<ol><li>Given <code>lru_cache</code> on <code>load_routing_config()</code>/<code>load_pricing_config()</code>,</li></ol>
+<p>how would you design a zero-downtime config reload (multiple worker processes, e.g. under <code>uvicorn --workers N</code>) without introducing a race where different workers serve different <code>policy_version</code>s simultaneously for an uncomfortably long window?</p>
+<ol><li><code>FailedRequest.error_message</code> is truncated to 2000 characters</li></ol>
+<p>(<code>error_message[:2000]</code>). What class of debugging information could this silently discard for a deeply nested exception with a long traceback, and how would you preserve it without unbounded row growth?</p>
+<ol><li>Design a test that would have caught the heuristic-classifier</li></ol>
+<p>confidence bug *before* it shipped, using only the existing <code>tests/conftest.py</code> fixture and no network access.</p>
+<ol><li><code>OptimizationRecommendation</code>'s <code>evidence</code> JSON field duplicates numbers</li></ol>
+<p>already present in <code>RoutingPattern</code> rows referenced by <code>(task_type, tier, provider, model, policy_version)</code>. Is this denormalization justified given <code>routing_patterns</code> gets wholesale deleted and reinserted on every refresh? What would break if <code>evidence</code> weren't captured?</p>
+<ol><li>Sketch what changes would be required to make <code>routing_learning.refresh()</code></li></ol>
+<p>safe to run concurrently with itself (e.g. two overlapping <code>POST /analytics/refresh</code> calls) — what's the current failure mode, and what SQLAlchemy/Postgres primitive would you reach for?</p>
+<hr>
+<h2 id="18-knowledge-checklist">18. Knowledge Checklist</h2>
+<p>After this guide, you should be able to:</p>
+<ul class="checklist"><li class="checklist-item">Explain the full <code>POST /chat</code> pipeline from memory, function by function</li><li class="checklist-item">Explain why the database is 4+ normalized tables and what <code>db.flush()</code></li></ul>
+<p>protects against</p>
+<ul class="checklist"><li class="checklist-item">Explain the provider abstraction and add a third provider without</li></ul>
+<p>guidance</p>
+<ul class="checklist"><li class="checklist-item">Explain the difference between <code>RoutingDecision</code>, <code>RoutingResult</code>, and</li></ul>
+<p><code>RoutingDecisionOutcome</code></p>
+<ul class="checklist"><li class="checklist-item">Explain confidence-based escalation and correctly predict the</li></ul>
+<p>outcome for edge cases (already-ADVANCED, exactly-at-threshold)</p>
+<ul class="checklist"><li class="checklist-item">Explain why <code>DecisionCard</code> is reconstructed on every read, not stored</li><li class="checklist-item">Explain the read/write service split convention and where it applies</li><li class="checklist-item">Explain why the learning system and the agent are both advisory-only</li><li class="checklist-item">Explain why the agent uses deterministic SQL, not an LLM</li><li class="checklist-item">Explain how <code>routing.yaml</code>/<code>pricing.yaml</code> are loaded and cached, and</li></ul>
+<p>the operational implication of that caching</p>
+<ul class="checklist"><li class="checklist-item">Explain every branch of <code>chat.py</code>'s error handling and which stage</li></ul>
+<p>writes which HTTP status</p>
+<ul class="checklist"><li class="checklist-item">Deploy a config change and correctly predict when it takes effect</li></ul>
+<hr>
+<h2 id="19-learning-roadmap-5-day-onboarding-plan">19. Learning Roadmap — 5-Day Onboarding Plan</h2>
+<p><strong>Day 1 (Core pipeline, ~4-5 hrs):</strong> Read Sections 1–7 of this guide alongside the actual files in reading order. Run the app locally, send one <code>/chat</code> request, and trace it through the database with a SQLite browser or <code>sqlite3 modelpilot.db</code> directly — confirm you can see your own request's four rows.</p>
+<p><strong>Day 2 (Providers, config, error handling, ~3-4 hrs):</strong> Sections 10, 12,</p>
+<ol><li>Read <code>tests/test_failure_paths.py</code> line by line — it's the fastest way</li></ol>
+<p>to see every failure branch exercised with concrete inputs. Try deliberately breaking something (wrong API key, missing pricing entry) and confirm you predicted the resulting error correctly.</p>
+<p><strong>Day 3 (Analytics, learning, decision cards, ~3-4 hrs):</strong> Read <code>analytics_service.py</code>, <code>routing_learning.py</code>, <code>decision_service.py</code>'s <code>get_decision_card()</code>. Call <code>POST /analytics/refresh</code> locally against some seed data and inspect the resulting <code>routing_patterns</code>/ <code>optimization_recommendations</code> rows directly.</p>
+<p><strong>Day 4 (Agent, ~2-3 hrs):</strong> Read <code>routing_agent.py</code> fully — it's the densest single file in the codebase (five independent finding functions). Run <code>POST /agent/investigate</code> and read the resulting <code>InvestigationReport.investigation_steps</code> — it's designed to be self-narrating.</p>
+<p><strong>Day 5 (Tests + first real task, ~3-4 hrs):</strong> Read the rest of <code>tests/</code>. Then attempt Exercise 1 or 2 from Section 20 below, in a branch, without looking at the answer.</p>
+<p><strong>What to skip initially:</strong> <code>investigation_service.py</code> and <code>history_service.py</code> — both are pure, small, obvious read-side query modules once you understand the write-side services they mirror. Revisit them only if you're touching <code>/history</code> or <code>/agent/reports</code> specifically.</p>
+<p><strong>What to revisit later:</strong> the O(n) scaling comments in <code>routing_learning.py</code> and <code>routing_agent.py</code> — irrelevant until the data volume question actually comes up.</p>
+<hr>
+<h2 id="20-final-challenge-practical-exercises">20. Final Challenge — Practical Exercises</h2>
+<p>Every exercise below references real files in this repository.</p>
+<ol><li><strong>Add a new provider.</strong> Write a class implementing <code>LLMProvider</code> in</li></ol>
+<p><code>backend/services/providers/</code>, add one line to <code>factory.py</code>'s <code>if</code> chain, add a model entry to <code>pricing.yaml</code>, and point a tier at it in <code>routing.yaml</code>. Confirm <code>startup_validation.py</code> still passes.</p>
+<ol><li><strong>Add a new routing tier.</strong> Add a <code>PREMIUM</code> value to <code>RoutingTier</code> in</li></ol>
+<p><code>schemas/routing_decision.py</code>, add it to <code>_TIER_ORDER</code> in <code>routing_engine.py</code>, add a <code>premium:</code> block to <code>routing.yaml</code>'s <code>tiers:</code>, and update <code>startup_validation.py</code>'s <code>REQUIRED_TIERS</code> if it should be mandatory.</p>
+<ol><li><strong>Implement retries on provider failure.</strong> Currently <code>chat.py</code> makes</li></ol>
+<p>exactly one call to <code>provider.generate()</code> — a single exception goes straight to <code>record_failure(stage="provider_call")</code>. Add a bounded retry with backoff inside <code>OpenRouterProvider.generate()</code> and <code>GeminiProvider.generate()</code> (or a shared decorator in <code>providers/base.py</code>) without changing <code>chat.py</code>'s call site.</p>
+<ol><li><strong>Add authentication.</strong> There is none today (confirmed: no auth</li></ol>
+<p>middleware, no API key check on any router). Add a simple API-key header check as FastAPI middleware or a shared <code>Depends()</code> across all routers.</p>
+<ol><li><strong>Add caching.</strong> There is no cache layer today beyond <code>lru_cache</code> on</li></ol>
+<p>config singletons. Add a short-TTL cache for <code>GET /stats</code> (a candidate since it's a full-table aggregation on every call).</p>
+<ol><li><strong>Improve analytics.</strong> <code>analytics_service.get_routing_overview()</code> has no</li></ol>
+<p>date-range filtering — it aggregates all history every time. Add <code>?since=</code> / <code>?until=</code> query params to <code>GET /analytics/routing</code>.</p>
+<ol><li><strong>Fix a known gap.</strong> <code>failed_requests</code> (Section 16) has no read</li></ol>
+<p>endpoint. Add <code>GET /failures</code> with the same pagination pattern as <code>GET /history</code>.</p>
+<ol><li><strong>Refactor a service.</strong> <code>routing_agent.py</code>'s five finding functions</li></ol>
+<p>share a very similar <code>Finding(...)</code> construction pattern. Extract the common shape into a small builder without changing any function's external behavior — confirm with <code>tests/test_routing_agent.py</code> that nothing regresses.</p>
+  </main>
+</div>
+
+<script type="module">
+  import mermaid from "https://cdn.jsdelivr.net/npm/mermaid@11/dist/mermaid.esm.min.mjs";
+  mermaid.initialize({ startOnLoad: true, securityLevel: "loose" });
+</script>
