@@ -1,0 +1,359 @@
+<title>RoutingBridge — The Remaining 10%</title>
+<style>
+:root{
+  --bg:#f8f7f5;
+  --surface:#ffffff;
+  --border:#e2ded4;
+  --text:#211f1a;
+  --text-dim:#6b6558;
+  --accent:#8a5a2e;
+  --accent-soft:#f2e8da;
+  --code-bg:#f0ece2;
+  --mono: "SF Mono", ui-monospace, "Cascadia Mono", Consolas, monospace;
+  --serif: Georgia, "Iowan Old Style", "Palatino Linotype", serif;
+  --sans: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+}
+@media (prefers-color-scheme: dark){
+  :root{
+    --bg:#17140f;
+    --surface:#1e1a14;
+    --border:#332c22;
+    --text:#ece6da;
+    --text-dim:#a39a89;
+    --accent:#d99e5c;
+    --accent-soft:#2a2216;
+    --code-bg:#221d15;
+  }
+}
+:root[data-theme="dark"]{
+  --bg:#17140f; --surface:#1e1a14; --border:#332c22; --text:#ece6da;
+  --text-dim:#a39a89; --accent:#d99e5c; --accent-soft:#2a2216; --code-bg:#221d15;
+}
+:root[data-theme="light"]{
+  --bg:#f8f7f5; --surface:#ffffff; --border:#e2ded4; --text:#211f1a;
+  --text-dim:#6b6558; --accent:#8a5a2e; --accent-soft:#f2e8da; --code-bg:#f0ece2;
+}
+*{box-sizing:border-box;}
+html,body{margin:0;padding:0;}
+body{
+  background:var(--bg);
+  color:var(--text);
+  font-family:var(--sans);
+  font-size:16px;
+  line-height:1.65;
+}
+.shell{
+  display:grid;
+  grid-template-columns:270px minmax(0,1fr);
+  gap:0;
+  max-width:1300px;
+  margin:0 auto;
+}
+nav.toc{
+  position:sticky;
+  top:0;
+  align-self:start;
+  height:100vh;
+  overflow-y:auto;
+  padding:2.5rem 1.5rem 2rem 2rem;
+  border-right:1px solid var(--border);
+}
+nav.toc .label{
+  font-family:var(--mono);
+  font-size:.7rem;
+  letter-spacing:.08em;
+  text-transform:uppercase;
+  color:var(--text-dim);
+  margin-bottom:1rem;
+}
+nav.toc ul{list-style:none;margin:0;padding:0;display:flex;flex-direction:column;gap:.5rem;}
+nav.toc a{
+  color:var(--text-dim);
+  text-decoration:none;
+  font-size:.83rem;
+  line-height:1.4;
+  display:block;
+}
+nav.toc a:hover, nav.toc a:focus-visible{color:var(--accent);}
+main{padding:2.5rem 3rem 6rem 3rem; min-width:0;}
+h1{
+  font-family:var(--serif);
+  font-size:2.05rem;
+  font-weight:600;
+  letter-spacing:-.01em;
+  text-wrap:balance;
+  margin:0 0 .5rem 0;
+}
+h2{
+  font-family:var(--serif);
+  font-size:1.4rem;
+  font-weight:600;
+  margin:3rem 0 1rem 0;
+  border-top:1px solid var(--border);
+  padding-top:1.75rem;
+  scroll-margin-top:1.5rem;
+}
+h3{font-family:var(--serif); font-size:1.1rem; margin:1.75rem 0 .75rem 0;}
+p{max-width:74ch; color:var(--text); margin:0 0 1rem 0;}
+p strong{color:var(--text); font-weight:650;}
+code{
+  font-family:var(--mono);
+  font-size:.85em;
+  background:var(--code-bg);
+  padding:.12em .38em;
+  border-radius:4px;
+  color:var(--accent);
+}
+blockquote{
+  margin:1.25rem 0;
+  padding:.9rem 1.1rem;
+  background:var(--accent-soft);
+  border-radius:6px;
+  max-width:74ch;
+}
+blockquote, blockquote code{color:var(--text);}
+ul{max-width:74ch; padding-left:1.3rem; margin:0 0 1rem 0;}
+ol{max-width:74ch; padding-left:1.4rem; margin:0 0 1rem 0;}
+li{margin-bottom:.45rem;}
+hr{border:none; border-top:1px solid var(--border); margin:2.5rem 0;}
+.diagram-wrap{
+  background:var(--surface);
+  border:1px solid var(--border);
+  border-radius:10px;
+  padding:1.25rem;
+  margin:1rem 0 2rem 0;
+  overflow-x:auto;
+}
+.diagram-wrap pre.mermaid{margin:0;}
+.eyebrow{
+  font-family:var(--mono);
+  font-size:.72rem;
+  letter-spacing:.09em;
+  text-transform:uppercase;
+  color:var(--accent);
+  margin-bottom:.75rem;
+}
+.table-wrap{overflow-x:auto; margin:0 0 1.5rem 0; border:1px solid var(--border); border-radius:8px;}
+table{border-collapse:collapse; width:100%; font-size:.88rem;}
+th{
+  text-align:left;
+  background:var(--code-bg);
+  font-family:var(--mono);
+  font-size:.72rem;
+  letter-spacing:.04em;
+  text-transform:uppercase;
+  color:var(--text-dim);
+  padding:.65rem .9rem;
+  border-bottom:1px solid var(--border);
+  white-space:nowrap;
+}
+td{padding:.65rem .9rem; border-bottom:1px solid var(--border); vertical-align:top;}
+tr:last-child td{border-bottom:none;}
+ul.checklist{list-style:none; padding-left:0;}
+li.checklist-item{position:relative; padding-left:1.6rem;}
+li.checklist-item::before{
+  content:"";
+  position:absolute;
+  left:0; top:.15rem;
+  width:1.05rem; height:1.05rem;
+  border:1.5px solid var(--text-dim);
+  border-radius:4px;
+}
+pre.codeblock{
+  background:var(--code-bg);
+  border:1px solid var(--border);
+  border-radius:8px;
+  padding:1rem 1.1rem;
+  overflow-x:auto;
+  font-family:var(--mono);
+  font-size:.82rem;
+  line-height:1.55;
+  max-width:100%;
+}
+pre.codeblock code{background:none; padding:0; color:var(--text);}
+@media (max-width:900px){
+  .shell{grid-template-columns:1fr;}
+  nav.toc{position:relative; height:auto; border-right:none; border-bottom:1px solid var(--border);}
+  main{padding:2rem 1.25rem 4rem 1.25rem;}
+}
+</style>
+
+<div class="shell">
+  <nav class="toc">
+    <div class="label">Contents</div>
+    <ul>
+      <li><a href="#step-1-gap-inventory">Step 1 — Gap Inventory</a></li>
+      <li><a href="#step-2-priority-classification">Step 2 — Priority</a></li>
+      <li><a href="#frontend-deep-dive-step-5">Frontend Deep Dive</a></li>
+      <li><a href="#deployment-deep-dive-step-6">Deployment Deep Dive</a></li>
+      <li><a href="#step-7-test-suite-deep-dive-grouped-by-feature">Test Suite Deep Dive</a></li>
+      <li><a href="#step-8-small-files">Small Files</a></li>
+      <li><a href="#step-9-study-roadmap">Study Roadmap</a></li>
+      <li><a href="#step-10-final-checklist">Final Checklist</a></li>
+    </ul>
+  </nav>
+  <main>
+    <div class="eyebrow">Gap analysis · Frontend, deployment, tests</div>
+    <h1>RoutingBridge — The Remaining 10%</h1>
+<p>You've already got the Backend Architecture Guide and the Engineering Walkthrough. Both are backend-only. This document covers everything else in the repository: the frontend, deployment, the rest of the test suite, and every small schema/util file that got a one-line mention at most. Nothing here repeats what those two documents already covered.</p>
+<p>Written for someone who knows Python and FastAPI but hasn't seen Streamlit, Docker, or nginx used in anger before.</p>
+<hr>
+<h2 id="step-1-gap-inventory">STEP 1 — Gap Inventory</h2>
+<p>Files the first two guides skipped, briefly mentioned, or didn't reverse engineer:</p>
+<div class="table-wrap"><table><thead><tr><th>File</th><th>Prior coverage</th></tr></thead><tbody><tr><td><code>frontend/streamlit_app.py</code></td><td>Named once ("Streamlit frontend") — never opened</td></tr><tr><td><code>frontend/theme.py</code></td><td>Never mentioned</td></tr><tr><td><code>Dockerfile</code></td><td>Never mentioned</td></tr><tr><td><code>docker-compose.yml</code></td><td>Never mentioned</td></tr><tr><td><code>render.yaml</code></td><td>Never mentioned</td></tr><tr><td><code>deploy/nginx.conf.template</code></td><td>One diagram arrow ("nginx routes /api/* -&gt; FastAPI") — internals never shown</td></tr><tr><td><code>deploy/start.sh</code></td><td>Never mentioned</td></tr><tr><td><code>.streamlit/config.toml</code></td><td>Never mentioned</td></tr><tr><td><code>requirements.txt</code></td><td>Never mentioned</td></tr><tr><td><code>backend/schemas/quality.py</code></td><td>Referenced by name in passing, fields never shown</td></tr><tr><td><code>backend/schemas/history.py</code></td><td>Same</td></tr><tr><td><code>backend/schemas/stats.py</code></td><td>Same</td></tr><tr><td><code>backend/schemas/analytics.py</code></td><td>Same</td></tr><tr><td><code>backend/schemas/investigation.py</code></td><td>Same</td></tr><tr><td><code>tests/test_api_regression.py</code></td><td>Listed in a file count, never opened</td></tr><tr><td><code>tests/test_classifier_json_format.py</code></td><td>Same</td></tr><tr><td><code>tests/test_decision_card.py</code></td><td>Same</td></tr><tr><td><code>tests/test_decision_service.py</code></td><td>Same</td></tr><tr><td><code>tests/test_routing_agent.py</code></td><td>Same</td></tr><tr><td><code>tests/test_routing_learning.py</code></td><td>Same</td></tr><tr><td><code>tests/test_analytics_service.py</code></td><td>Same</td></tr><tr><td><code>tests/test_bootstrap_db.py</code></td><td>Same</td></tr><tr><td>Every <code>__init__.py</code> (8 files)</td><td>Never mentioned</td></tr></tbody></table></div>
+<hr>
+<h2 id="step-2-priority-classification">STEP 2 — Priority Classification</h2>
+<h3>Critical (a GenAI/backend interview candidate must understand)</h3>
+<ul><li><strong><code>streamlit_app.py</code></strong> — you built the only UI this system has; not</li></ul>
+<p>knowing how it talks to your own API is an instant red flag.</p>
+<ul><li><strong><code>Dockerfile</code> + <code>deploy/start.sh</code> + <code>deploy/nginx.conf.template</code></strong> —</li></ul>
+<p>"how does your app actually run in production" is one of the most common system-design-adjacent interview questions, and this project's answer (three processes, one container, one reverse proxy) is a genuinely good story to be able to tell.</p>
+<ul><li><strong><code>tests/test_api_regression.py</code></strong> — this is the test that proves the</li></ul>
+<p>entire <code>/chat</code> → <code>/history</code> → <code>/stats</code> → <code>/analytics/*</code> → <code>/agent/*</code> pipeline works end-to-end without hitting a real LLM. If you can't explain how a test suite avoids real API calls, you can't explain how you'd test *any* LLM-backed system, which is the actual GenAI-interview question hiding inside "explain your tests."</p>
+<ul><li><strong><code>tests/test_classifier_json_format.py</code></strong> — this test exists because of</li></ul>
+<p>a real production bug (a model silently wrapping JSON in a markdown fence). "Tell me about a bug you fixed" is a top-5 interview question, and this is a genuine, well-documented one sitting in your own repo.</p>
+<h3>Important (good to know, rarely the first thing asked)</h3>
+<ul><li><strong><code>theme.py</code></strong> — worth understanding at the "why does this file exist</li></ul>
+<p>separately" level, not worth memorizing CSS.</p>
+<ul><li><strong><code>render.yaml</code> / <code>docker-compose.yml</code></strong> — one is "how do I run this on</li></ul>
+<p>my laptop," the other is "how does Render know how to build and run this" — useful context, unlikely to be interview-grilled on specifically.</p>
+<ul><li>**<code>test_decision_card.py</code>, <code>test_decision_service.py</code>,</li></ul>
+<p><code>test_routing_agent.py</code>, <code>test_routing_learning.py</code>, <code>test_analytics_service.py</code>** — these confirm behavior the Engineering Walkthrough already explained in prose; useful as "show me you can read a test and infer what it protects," not new concepts.</p>
+<ul><li>**<code>quality.py</code>, <code>history.py</code>, <code>stats.py</code>, <code>analytics.py</code>,</li></ul>
+<p><code>investigation.py</code> schemas** — you already know what these endpoints return in prose; the schemas are just the typed version of the same facts.</p>
+<h3>Optional (only needed if you're maintaining or extending this repo)</h3>
+<ul><li><strong><code>test_bootstrap_db.py</code></strong> — confirms a one-time setup script works;</li></ul>
+<p>not something an interviewer probes.</p>
+<ul><li><strong><code>.streamlit/config.toml</code></strong> — three color values and a stats-opt-out</li></ul>
+<p>flag.</p>
+<ul><li><strong><code>requirements.txt</code></strong> — worth skimming once for the numpy/pyarrow pin</li></ul>
+<p>story (a genuinely interesting "we hit a segfault" anecdote), otherwise just a dependency list.</p>
+<ul><li><strong>Every <code>__init__.py</code></strong> — all eight are empty. They exist because Python</li></ul>
+<p>needs a file present to treat a directory as an importable package. That sentence is the entire lesson; there is nothing else in any of them.</p>
+<hr>
+<h2 id="frontend-deep-dive-step-5">Frontend Deep Dive (STEP 5)</h2>
+<h3>1. Simple analogy</h3>
+<p>The backend is a kitchen. It cooks food (runs the routing logic, calls the LLMs, saves the receipt to a ledger). The frontend — <code>streamlit_app.py</code> — is the waiter. <strong>The waiter never cooks.</strong> It walks to your table, takes your order (a prompt typed into a text box), carries it to the kitchen (an HTTP call to <code>POST /chat</code>), and brings back whatever the kitchen made, plated nicely (the routing tier badge, the cost breakdown, the quality verdict — all rendered from the same JSON <code>chat.py</code> already returns).</p>
+<h3>2. Real-world problem</h3>
+<p>Someone needs to actually *use* this system without curling JSON by hand. And demos need to look trustworthy — a routing decision nobody can see is just a black box; a routing decision with a visible "why" builds confidence in the product.</p>
+<h3>3. How this project solves it</h3>
+<p>One Streamlit process, one Python file, four "pages" that are really just four Python functions (<code>render_chat</code>, <code>render_history</code>, <code>render_analytics</code>, <code>render_settings</code>) picked by a sidebar radio button. Every page does the same three things: call one backend endpoint via <code>httpx</code>, get JSON back, render it as styled HTML cards. No page ever talks to the database directly, no page ever imports anything from <code>backend/</code> — it is a pure HTTP client, exactly the same as if it were written in JavaScript instead of Python.</p>
+<h3>4. Actual implementation</h3>
+<div class="diagram-wrap"><pre class="mermaid">flowchart TD
+    A[&quot;User types prompt, clicks Send&lt;br/&gt;render_chat()&quot;] --&gt; B[&quot;_request_with_retry POST /api/chat&quot;]
+    B --&gt; C[&quot;httpx.request against BACKEND_URL&quot;]
+    C --&gt;|&quot;200 JSON&quot;| D[&quot;st.container renders Response card&quot;]
+    C --&gt;|&quot;cold-start HTML page, not JSON&quot;| E[&quot;retry loop: show &#x27;waking up&#x27; message, sleep 4s&quot;]
+    C --&gt;|&quot;real timeout, retry_on_timeout=False&quot;| F[&quot;st.error: not resubmitted, avoid duplicate billing&quot;]
+    C --&gt;|&quot;our API&#x27;s own error JSON&quot;| G[&quot;st.error(data[&#x27;detail&#x27;])&quot;]
+    D --&gt; H[&quot;Routing Decision card + Cost card + Quality card&lt;br/&gt;built from kv_row() / tier_badge() / quality_badge()&quot;]</pre></div>
+<p><strong><code>_request_with_retry()</code> — the one genuinely interesting function in this file.</strong> It exists because this app is deployed on Render's free tier, which <strong>puts the container to sleep after inactivity</strong>. The very next request has to wait for a cold start — and Render's own "waking up" placeholder page comes back as <strong>HTML, not JSON</strong>, almost instantly. That's the signal this function keys on: <code>resp.json()</code> raising <code>ValueError</code> means "that wasn't our API answering, that was the platform's wake-up page" → retry. A <code>200</code> with real JSON, or a <code>4xx/5xx</code> with a <code>detail</code> field, means the *backend itself* answered → stop retrying and show it.</p>
+<p>The other real decision here: <code>retry_on_timeout=False</code> for <code>POST /chat</code> specifically. If a request to <code>/chat</code> times out client-side, the backend might still be mid-flight, possibly about to make a real, billed call to DeepSeek R1 that takes 140 seconds. Silently retrying would risk <strong>paying for the same prompt twice</strong>. Every other endpoint (<code>GET /history</code>, <code>GET /stats</code>, <code>GET /models</code>) is safe to retry — they're read-only, retrying them costs nothing and fixes nothing worse than a wasted network round trip.</p>
+<p><strong>Session state:</strong> there isn't much. Streamlit reruns the *entire script top to bottom* on every interaction (every click, every text input) — this is how Streamlit works, not something this codebase built. There's no <code>st.session_state</code> usage anywhere in this file; every page just re-fetches from the backend on every rerun. This is a deliberate simplicity trade-off worth naming in an interview: it means the UI is always showing fresh data, at the cost of an HTTP round-trip on every single interaction, even ones that didn't change any backend state (e.g., typing in the search box on the History page re-runs the whole script, though the actual filtering (<code>df[df["prompt"].str.contains(...)]</code>) happens client-side on the already- fetched <code>pandas</code> DataFrame, not as a new API call).</p>
+<p><strong>Error handling, concretely:</strong> three distinct failure shapes are distinguished — a network-level <code>httpx.HTTPError</code>, a client-side timeout, and an API-level error response — and each gets different UI treatment (silent retry, "please try again" without retry, or <code>st.error(detail)</code> respectively).</p>
+<h3>5. Interview explanation</h3>
+<p>"The frontend is a stateless HTTP client. It calls its own backend through a small retry wrapper that has to solve one real problem: distinguishing 'the free-tier host is asleep, keep trying' from 'the backend actually rejected this' from 'this specific call already reached the server and must not be silently resent.' Everything else — cards, badges, charts — is just formatting the JSON <code>chat.py</code> already returns."</p>
+<h3>6. Mini summary</h3>
+<p><code>streamlit_app.py</code> = 4 page functions × (1 API call + JSON-to-HTML rendering). <code>theme.py</code> = the CSS and tiny HTML-snippet helpers those pages call. The one piece of real logic is <code>_request_with_retry</code>'s cold-start detection and its refusal to retry a possibly-in-flight paid LLM call.</p>
+<hr>
+<h3><code>theme.py</code> — the other frontend file</h3>
+<p><strong>1. Analogy:</strong> if <code>streamlit_app.py</code> is the waiter taking orders, <code>theme.py</code> is the uniform and the restaurant's interior design — it makes no decisions about what food goes where, it just makes everything look consistent.</p>
+<p><strong>2. Problem:</strong> Streamlit's default look is plain and doesn't have a rich enough built-in theming API for a custom, card-based design.</p>
+<p><strong>3. Solution:</strong> one big CSS string, injected once via <code>st.markdown(CSS, unsafe_allow_html=True)</code>, plus small Python functions (<code>metric_tile</code>, <code>tier_badge</code>, <code>quality_badge</code>, <code>kv_row</code>, <code>page_header</code>) that return pre-styled HTML snippets so <code>streamlit_app.py</code> never has to write raw <code>&lt;div class="..."&gt;</code> strings inline.</p>
+<p><strong>4. One thing worth knowing precisely:</strong> <code>div.st-key-response_card</code> is targeted very specifically (not the generic <code>stVerticalBlockBorderWrapper</code> test ID) because that generic ID is *reused by Streamlit's own page layout* — targeting it globally would have boxed the entire page in a border, not just the one response card. This is a real, documented CSS-scoping gotcha in the file's own comment, and a good example of "read the actual DOM before you write a selector."</p>
+<p><strong>5. Interview explanation:</strong> "It's a design-tokens file — colors, badge/card HTML builders — split out purely so the 400-line page-logic file doesn't also carry 200 lines of CSS."</p>
+<p><strong>6. Mini summary:</strong> Pure presentation. Zero business logic. Skippable past a five-minute skim.</p>
+<hr>
+<h2 id="deployment-deep-dive-step-6">Deployment Deep Dive (STEP 6)</h2>
+<h3>1. Simple analogy</h3>
+<p>Think of shipping this app like moving into a furnished apartment building with three roommates who each do one job, and a doorman out front who decides which roommate gets which visitor. The <strong>doorman is nginx</strong>. Two of the <strong>roommates are FastAPI and Streamlit</strong>, each running as their own process, each only reachable from inside the building (<code>127.0.0.1</code>), never directly from the street. The <strong>building itself is one Docker container</strong> — all three of them move in together, packed by the <code>Dockerfile</code>, and the building's front door is the *one* public port Render exposes.</p>
+<h3>2. Real-world problem</h3>
+<p>You have two different servers (an API and a UI) that both need to be reachable from the internet, but a typical free-tier host (Render, in this case) gives you exactly one public port per service. You also don't want to run two separate paid services for one demo app.</p>
+<h3>3. How this project solves it</h3>
+<p>One container, three processes, one public port. <code>deploy/start.sh</code> boots FastAPI on <code>127.0.0.1:8000</code> and Streamlit on <code>127.0.0.1:8501</code> as background processes, then runs <strong>nginx in the foreground</strong> as the container's main process — nginx is the thing Docker/Render actually watches to decide if the container is alive. <code>deploy/nginx.conf.template</code> is nginx's routing table: anything starting with <code>/api/</code> goes to FastAPI (with the <code>/api</code> prefix *stripped*, so <code>backend/routers/chat.py</code>'s <code>/chat</code> route never has to know it's being proxied under <code>/api/chat</code> from the browser's point of view); everything else goes to Streamlit, including the WebSocket upgrade headers Streamlit's live UI needs to stay connected.</p>
+<h3>4. Actual implementation</h3>
+<div class="diagram-wrap"><pre class="mermaid">sequenceDiagram
+    participant Render as Render Platform
+    participant Docker as Container Boot
+    participant Start as deploy/start.sh
+    participant API as uvicorn - FastAPI on 8000
+    participant UI as streamlit on 8501
+    participant Nginx as nginx foreground on PORT
+    participant Browser
+
+    Render-&gt;&gt;Docker: docker build then docker run
+    Docker-&gt;&gt;Start: CMD start.sh
+    Start-&gt;&gt;Start: envsubst PORT into nginx.conf
+    Start-&gt;&gt;API: uvicorn backend.main app, port 8000, background
+    Start-&gt;&gt;UI: streamlit run, port 8501, background
+    Start-&gt;&gt;Nginx: exec nginx daemon off, foreground as PID 1
+    Browser-&gt;&gt;Nginx: GET / (or /api/*)
+    alt path starts with /api/
+        Nginx-&gt;&gt;API: proxy_pass, prefix stripped
+        API--&gt;&gt;Nginx: JSON response
+    else everything else
+        Nginx-&gt;&gt;UI: proxy_pass with Upgrade/Connection headers
+        UI--&gt;&gt;Nginx: HTML/WebSocket
+    end
+    Nginx--&gt;&gt;Browser: response</pre></div>
+<p><strong>Environment variables — where they actually come from:</strong> <code>render.yaml</code> declares which env vars the Render service needs (<code>GOOGLE_API_KEY</code>, <code>OPENROUTER_API_KEY</code>, <code>DATABASE_URL</code> — all <code>sync: false</code>, meaning Render won't auto-populate them, a human sets them in the dashboard; plus <code>LOG_LEVEL</code>, <code>EASY_MAX_WORDS</code>, <code>MEDIUM_MAX_WORDS</code> with real default values baked into the YAML). These become real environment variables inside the container, which <code>backend/utils/config.py</code>'s <code>Settings</code> class picks up automatically (<code>pydantic-settings</code> reads <code>.env</code> *or* real env vars — env vars take precedence, which is exactly what production needs since there's no <code>.env</code> file inside a deployed container).</p>
+<p><strong><code>$PORT</code> specifically:</strong> Render assigns this dynamically at runtime — it's not fixed at <code>8080</code>. <code>nginx.conf.template</code> has <code>listen ${PORT};</code> literally as a placeholder string; <code>start.sh</code> runs <code>envsubst '${PORT}'</code> to substitute the real value into a generated <code>/etc/nginx/nginx.conf</code> before nginx starts. Note the explicit <code>'${PORT}'</code> argument to <code>envsubst</code> — without it, <code>envsubst</code> would try to substitute *every* <code>$variable</code>-looking token in the file, including nginx's own <code>$host</code>, <code>$http_upgrade</code>, and <code>$remote_addr</code>, which are nginx's runtime variables, not shell variables, and would break if replaced with empty strings.</p>
+<p><strong>Static files:</strong> none exist in this project — Streamlit serves its own UI dynamically, there's no separate static asset pipeline.</p>
+<p><strong>Local dev (<code>docker-compose.yml</code>) vs. production (<code>render.yaml</code>):</strong> <code>docker-compose.yml</code> builds the same <code>Dockerfile</code> locally, maps port 8080, and mounts a <code>./data</code> volume (for local SQLite persistence across container restarts). <code>render.yaml</code> is Render-specific IaC — same <code>Dockerfile</code>, but declares the platform-level concerns (<code>healthCheckPath: /api/health</code>, <code>plan: free</code>) that only matter in that hosting context.</p>
+<h3>5. Interview explanation</h3>
+<p>"Single-container, multi-process deployment: nginx as a reverse proxy in front of FastAPI and Streamlit, each bound to localhost-only ports inside the container. Path-based routing (<code>/api/*</code> vs everything else) means the browser only ever sees one origin. <code>start.sh</code> is the process supervisor — crude compared to something like supervisord, but sufficient for exactly two background processes and one foreground one."</p>
+<h3>6. Mini summary</h3>
+<p><code>Dockerfile</code> builds the image. <code>start.sh</code> boots three processes and hands control to nginx. <code>nginx.conf.template</code> is the routing table, filled in with the real port at container start via <code>envsubst</code>. <code>render.yaml</code> / <code>docker-compose.yml</code> are two different platforms' instructions for running that same image.</p>
+<hr>
+<h2 id="step-7-test-suite-deep-dive-grouped-by-feature">STEP 7 — Test Suite Deep Dive, Grouped by Feature</h2>
+<h3>API contract stability (<code>test_api_regression.py</code>)</h3>
+<p><strong>What it validates:</strong> that <code>/chat</code>, <code>/history</code>, <code>/stats</code>, <code>/analytics/*</code>, <code>/routing/decision/{id}</code>, and <code>/agent/*</code> all return *exactly* the field set they're supposed to (<code>EXPECTED_CHAT_KEYS</code>, <code>EXPECTED_HISTORY_KEYS</code>, <code>EXPECTED_STATS_KEYS</code> — literal set comparisons against <code>response.json().keys()</code>), end-to-end through a real <code>TestClient(app)</code>, with every LLM/provider call faked via <code>app.dependency_overrides</code> and <code>monkeypatch</code>. <strong>Why it exists:</strong> this file's own docstring says it — regression coverage for the refactor from one flat <code>RequestLog</code> table to the current four-table normalized schema. The API's *external contract* had to survive that internal rewrite unchanged. <strong>What bug it prevents:</strong> silently dropping or renaming a response field during a future refactor — a mistake that wouldn't show up as a crash, only as a frontend field quietly rendering blank. <strong>What it protects:</strong> the entire <code>routers/</code> layer, transitively.</p>
+<h3>Classifier JSON parsing (<code>test_classifier_json_format.py</code>)</h3>
+<p><strong>What it validates:</strong> <code>strip_json_fence()</code> correctly strips a <code> </code>`<code>json </code> fence and passes plain JSON through unchanged; and <code>OpenRouterProvider.generate()</code> actually sends <code>{"response_format": {"type": "json_object"}}</code> when asked, and omits it for regular (non-structured) chat calls. <strong>Why it exists:</strong> a real production incident. The module docstring states it plainly: the classifier and quality verifier were <strong>silently dead in production</strong> because Mistral (via OpenRouter) wrapped its JSON reply in a markdown fence, and <code>OpenRouterProvider</code> wasn't requesting <code>response_format="json_object"</code> — every real call failed to parse and silently fell back to the heuristic classifier, with nobody noticing because the fallback path doesn't error, it just degrades. <strong>What bug it prevents:</strong> this exact regression happening again, silently, a second time. <strong>What it protects:</strong> <code>classifier_service.py</code>, <code>quality_verifier.py</code>, <code>openrouter_provider.py</code> — this is the single best "tell me about a real bug" story in the entire codebase.</p>
+<h3>Decision Card reconstruction (<code>test_decision_card.py</code>)</h3>
+<p><strong>What it validates:</strong> <code>get_decision_card()</code> across six cases — unknown <code>request_id</code> → <code>None</code>; normal routing with no recommendation; an escalated decision's <code>reasoning_steps</code> correctly mention the escalation; a matching recommendation surfaces; a recommendation with a different <code>policy_version</code> is correctly ignored; a recommendation with a different <code>provider</code>/<code>model</code> is correctly ignored; and full JSON serialization shape. <strong>Why it exists:</strong> the matching logic in <code>_find_matching_recommendation()</code> (five-column exact equality, no FK) is exactly the kind of logic that's easy to get subtly wrong — this test suite exercises the specific "almost matches but doesn't" cases explicitly, not just the happy path. <strong>What bug it prevents:</strong> a recommendation from a stale policy or a different model silently attaching itself to the wrong decision card.</p>
+<h3>Transactional persistence (<code>test_decision_service.py</code>)</h3>
+<p><strong>What it validates:</strong> <code>record()</code> writes all four tables correctly; <code>quality_results</code> is correctly skipped when no verdict was computed; and — the most important one — re-using a <code>request_id</code> raises <code>IntegrityError</code> and <strong>leaves no partial rows behind</strong> across any of the four tables. <strong>What bug it prevents:</strong> a partial write (e.g., <code>Request</code> inserted but <code>RoutingDecision</code> silently failing) that would corrupt the audit trail's guarantee that every <code>requests</code> row has a matching <code>routing_decisions</code> row.</p>
+<h3>The Investigation Agent (<code>test_routing_agent.py</code>)</h3>
+<p><strong>What it validates:</strong> empty-database behavior (no findings, risk="low"); that <code>investigate()</code> genuinely never writes to <code>routing_patterns</code> or <code>optimization_recommendations</code> (the safety rule from <code>routing_agent.py</code>'s own docstring, tested directly by asserting row counts don't change); degraded-task-type detection with a real 5-sample group; cost-anomaly detection using deliberately backdated rows to simulate a multi-day cost trend; recommendation validation both when live data still supports a recommendation ("trustworthy") and when live data has since reversed ("should be re-reviewed"); persistence and retrieval round-trip; JSON serialization shape. <strong>What bug it prevents:</strong> any of the five finding functions silently writing to a table they shouldn't, or a stale recommendation being reported as still-valid when live traffic has already contradicted it.</p>
+<h3>The Learning Pipeline (<code>test_routing_learning.py</code>)</h3>
+<p><strong>What it validates:</strong> one pattern row per group with correct <code>sample_size</code>/<code>pass_rate</code>/<code>failure_rate</code>; <code>refresh()</code> is idempotent (calling it twice yields the same one row, not two); a recommendation is generated when an alternative model has a meaningfully better pass rate at sufficient sample size; patterns from a *different* <code>policy_version</code> never generate a cross-policy recommendation; no recommendation is generated below <code>min_sample_size</code>. <strong>What bug it prevents:</strong> exactly the "policy_version blending" bug described in <code>routing_learning.py</code>'s own docstring — a recommendation being generated by comparing data across two different routing policies that were never actually in competition with each other.</p>
+<h3>Analytics aggregation (<code>test_analytics_service.py</code>)</h3>
+<p><strong>What it validates:</strong> <code>get_routing_overview()</code> correctly aggregates by provider, model, task type, and tier, and computes <code>average_cost</code> and <code>pass_rate</code> correctly across a small, deliberately-constructed 2-row dataset (reuses <code>test_routing_learning.py</code>'s <code>_record()</code> helper — a nice example of test code reuse mirroring the read/write service split in the app code itself). Also covers the empty-database case for every <code>/analytics/*</code> read endpoint. <strong>What bug it prevents:</strong> an aggregation query silently producing wrong averages (a classic SQL <code>GROUP BY</code> mistake) going undetected because it "looks" like reasonable output.</p>
+<h3>Bootstrap script (<code>test_bootstrap_db.py</code>)</h3>
+<p><strong>What it validates:</strong> <code>bootstrap()</code> creates all 8 expected tables; and running it twice seeds <code>routing_policies</code> exactly once, not twice — the idempotency the script's own docstring promises. <strong>What bug it prevents:</strong> a re-run of the bootstrap script (e.g., during a redeploy) accidentally duplicating the seeded policy row.</p>
+<hr>
+<h2 id="step-8-small-files">STEP 8 — Small Files</h2>
+<h3><code>backend/schemas/quality.py</code></h3>
+<p><strong>Why it exists:</strong> <code>QualityVerdict</code> is the one-and-only structured shape the quality-judge LLM must return (<code>{"passed": bool, "reason": str}</code>). Tiny, but it's the schema that turns an untrusted LLM string into something <code>quality_verifier.py</code> can trust via <code>.model_validate()</code> — same role <code>RoutingDecision</code> plays for the classifier, just simpler.</p>
+<h3><code>backend/schemas/history.py</code></h3>
+<p><strong>Why it exists:</strong> <code>HistoryItem</code> is the one response row shape for <code>GET /history</code>. Worth noting (already flagged in the Walkthrough's Code Smells section): several fields here (<code>reasoning_level</code>, <code>classifier_model</code>, <code>classifier_cost</code>, <code>fallback_used</code>) are always empty defaults in practice, because <code>history_service.py</code> has no persisted column to fill them from — the schema promises more than the data currently supplies.</p>
+<h3><code>backend/schemas/stats.py</code></h3>
+<p><strong>Why it exists:</strong> <code>StatsResponse</code> — one flat object, <code>GET /stats</code>'s entire response shape. No nested objects, because <code>/stats</code> is a dashboard summary, not a detail view.</p>
+<h3><code>backend/schemas/analytics.py</code></h3>
+<p><strong>Why it exists:</strong> the largest of the small schema files — six response models (<code>ProviderStats</code>, <code>ModelStats</code>, <code>TaskTypeStats</code>, <code>DailyMetric</code>, <code>RoutingOverviewResponse</code>, <code>RoutingPatternResponse</code>, <code>RecommendationResponse</code>, <code>RefreshResult</code>) because <code>/analytics/*</code> has the most varied response shapes of any router (one overview object nesting three different stat-row types, plus two standalone list endpoints). Its own docstring makes a small but real design point: <code>tier_distribution</code> is typed as a plain <code>dict[str, int]</code> rather than a dedicated model, because its keys are always exactly the three known <code>RoutingTier</code> values — not "stringly typed," a deliberately fixed 3-key lookup.</p>
+<h3><code>backend/schemas/investigation.py</code></h3>
+<p><strong>Why it exists:</strong> <code>Evidence</code>, <code>Finding</code>, <code>SuggestedAction</code>, <code>InvestigationReport</code>, <code>InvestigationReportSummary</code> — the typed shape of everything <code>routing_agent.py</code> produces. Worth reading <code>Evidence</code>'s docstring once: it's explicitly a *pointer* to source data plus derived numbers, never a full copy of the underlying row — same anti-duplication principle as <code>DecisionCard</code> not storing a JSON blob.</p>
+<h3><code>deploy/start.sh</code>, <code>deploy/nginx.conf.template</code>, <code>Dockerfile</code>,</h3>
+<p><code>docker-compose.yml</code>, <code>render.yaml</code></p>
+<p>Covered fully in Step 6.</p>
+<h3><code>.streamlit/config.toml</code></h3>
+<p>Three brand colors (<code>primaryColor</code>, <code>backgroundColor</code>, <code>secondaryBackgroundColor</code>) plus <code>textColor</code> and <code>gatherUsageStats = false</code>. This is why the sidebar radio button's selected-dot color matches the theme even though <code>theme.py</code>'s CSS injection can't reliably override it (per <code>theme.py</code>'s own comment) — Streamlit's *native* theme engine reads this file directly.</p>
+<h3><code>requirements.txt</code></h3>
+<p>One line worth knowing cold for an interview: <code>numpy==1.26.4</code> and <code>pyarrow==17.0.0</code> are pinned explicitly, not left to resolve automatically, because an unpinned <code>numpy</code> once resolved to a version that <strong>segfaulted</strong> inside <code>pyarrow</code>'s pandas-conversion code — the exact path <code>st.dataframe()</code> (used on the History page) exercises. This was confirmed with <code>PYTHONFAULTHANDLER=1</code>, not guessed. It's a genuinely good example of "a pin isn't superstition, it's a fix for a specific crash" — a strong answer to "tell me about a dependency issue you debugged."</p>
+<h3>The eight empty <code>__init__.py</code> files</h3>
+<p>They exist because Python's package system needs *a* file present in a directory (even an empty one) for that directory to be importable as a package (<code>from backend.services import decision_service</code> requires <code>backend/</code>, <code>backend/services/</code>, etc. to each have an <code>__init__.py</code>). There is genuinely nothing else to say about any of them.</p>
+<hr>
+<h2 id="step-9-study-roadmap">STEP 9 — Study Roadmap</h2>
+<div class="table-wrap"><table><thead><tr><th>Day</th><th>Focus</th><th>Est. time</th></tr></thead><tbody><tr><td>1</td><td>Backend Architecture Guide (already done)</td><td>3–4 hrs</td></tr><tr><td>2</td><td>Engineering Walkthrough — core pipeline + DB (Sections 1–9)</td><td>4 hrs</td></tr><tr><td>3</td><td>Engineering Walkthrough — config, providers, patterns, decisions, smells (Sections 10–16)</td><td>3 hrs</td></tr><tr><td>4</td><td><strong>This document</strong> — Frontend Deep Dive + <code>theme.py</code></td><td>1.5 hrs</td></tr><tr><td>5</td><td><strong>This document</strong> — Deployment Deep Dive (Dockerfile, start.sh, nginx)</td><td>1.5 hrs</td></tr><tr><td>6</td><td><strong>This document</strong> — Test Suite Deep Dive, read the actual test files alongside it</td><td>2.5 hrs</td></tr><tr><td>7</td><td><strong>This document</strong> — Small Files + all three documents' interview-question sections, out loud, from memory</td><td>2 hrs</td></tr></tbody></table></div>
+<p>Total: roughly 18 hours across a week, assuming you're also opening the actual source files alongside each document rather than reading passively.</p>
+<hr>
+<h2 id="step-10-final-checklist">STEP 10 — Final Checklist</h2>
+<p>Only items genuinely covered across all three documents are checked.</p>
+<ul class="checklist"><li class="checklist-item">I understand every backend file (main, routers, services, providers, database, utils)</li><li class="checklist-item">I understand every frontend file (<code>streamlit_app.py</code>, <code>theme.py</code>)</li><li class="checklist-item">I understand deployment (Dockerfile, start.sh, nginx, render.yaml, docker-compose.yml)</li><li class="checklist-item">I understand the test suite (all 10 test files, grouped by feature)</li><li class="checklist-item">I understand analytics (<code>analytics_service.py</code> + its schema + its tests)</li><li class="checklist-item">I understand learning (<code>routing_learning.py</code> + its schema + its tests)</li><li class="checklist-item">I understand investigation (<code>routing_agent.py</code> + <code>investigation_service.py</code> + their schemas + tests)</li><li class="checklist-item">I understand configuration (<code>.env</code>, <code>routing.yaml</code>, <code>pricing.yaml</code>, <code>Settings</code>, caching behavior, Render env vars)</li><li class="checklist-item">I can explain every API endpoint and its exact response shape</li><li class="checklist-item">I can extend the project — covered *conceptually* (Section 20 of the Engineering Walkthrough gives concrete exercises), but this box only gets checked by actually writing the code for at least one exercise yourself. Reading about a change and making it are different skills; do the exercise.</li></ul>
+  </main>
+</div>
+<script type="module">
+  import mermaid from "https://cdn.jsdelivr.net/npm/mermaid@11/dist/mermaid.esm.min.mjs";
+  mermaid.initialize({ startOnLoad: true, securityLevel: "loose" });
+</script>
