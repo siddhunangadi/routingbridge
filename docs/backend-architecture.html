@@ -996,3 +996,7 @@ hr{border:none; border-top:1px solid var(--border); margin:2.5rem 0;}
 <ul><li>PDF/document ingestion, chunking, embeddings, or a vector database</li><li>A message queue, background job worker, or cron/scheduler (refresh and investigate are both synchronous, manually-triggered HTTP endpoints)</li><li>A cache layer (Redis, in-memory TTL cache, etc.) — only <code>functools.lru_cache</code> on singleton service instances</li><li>User authentication/authorization — every endpoint is unauthenticated</li><li>Multi-tenancy — there is exactly one routing policy active at a time, globally</li></ul>
   </main>
 </div>
+<script type="module">
+  import mermaid from "https://cdn.jsdelivr.net/npm/mermaid@11/dist/mermaid.esm.min.mjs";
+  mermaid.initialize({ startOnLoad: true, securityLevel: "loose" });
+</script>
