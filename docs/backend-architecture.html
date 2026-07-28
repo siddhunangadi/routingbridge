@@ -445,7 +445,7 @@ hr{border:none; border-top:1px solid var(--border); margin:2.5rem 0;}
         datetime created_at
     }
     ROUTING_DECISIONS {
-        string request_id PK_FK
+        string request_id PK,FK
         string classifier_tier
         string final_tier
         float classifier_confidence
@@ -459,7 +459,7 @@ hr{border:none; border-top:1px solid var(--border); margin:2.5rem 0;}
         string escalation_reason &quot;nullable&quot;
     }
     EXECUTION_RESULTS {
-        string request_id PK_FK
+        string request_id PK,FK
         bool provider_success
         float latency_ms
         int input_tokens
@@ -468,7 +468,7 @@ hr{border:none; border-top:1px solid var(--border); margin:2.5rem 0;}
         string error_message &quot;nullable&quot;
     }
     QUALITY_RESULTS {
-        string request_id PK_FK
+        string request_id PK,FK
         bool verdict
         float quality_score &quot;nullable, unused&quot;
         string verifier_reasoning
@@ -811,7 +811,7 @@ hr{border:none; border-top:1px solid var(--border); margin:2.5rem 0;}
 <h2 id="10-configuration-flow">10. Configuration Flow</h2>
 <div class="diagram-wrap"><pre class="mermaid">flowchart TD
     EnvFile[&quot;.env / environment variables&quot;] --&gt; SettingsCls[&quot;utils/config.py: Settings(BaseSettings)&lt;br/&gt;google_api_key, openrouter_api_key,&lt;br/&gt;database_url, log_level,&lt;br/&gt;easy_max_words, medium_max_words&quot;]
-    SettingsCls --&gt;|&quot;get_settings(), lru_cache&quot;| SettingsSingleton((&quot;Settings singleton&lt;br/&gt;(1 per process)&quot;))
+    SettingsCls --&gt;|&quot;get_settings, lru_cache&quot;| SettingsSingleton((&quot;Settings singleton&lt;br/&gt;1 per process&quot;))
 
     RoutingYamlFile[&quot;config/routing.yaml&quot;] --&gt; YamlLoad[&quot;utils/yaml_config.py:&lt;br/&gt;load_routing_config() / load_pricing_config()&quot;]
     PricingYamlFile[&quot;config/pricing.yaml&quot;] --&gt; YamlLoad
