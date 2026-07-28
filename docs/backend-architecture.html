@@ -1,0 +1,998 @@
+<title>RoutingBridge — Backend Architecture</title>
+<style>
+:root{
+  --bg:#f7f8fa;
+  --surface:#ffffff;
+  --border:#dde2e8;
+  --text:#1a2230;
+  --text-dim:#5b6472;
+  --accent:#2f6f5e;
+  --accent-soft:#e4efec;
+  --code-bg:#eef1f4;
+  --mono: "SF Mono", ui-monospace, "Cascadia Mono", Consolas, monospace;
+  --serif: Georgia, "Iowan Old Style", "Palatino Linotype", serif;
+  --sans: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+}
+@media (prefers-color-scheme: dark){
+  :root{
+    --bg:#12161c;
+    --surface:#181e26;
+    --border:#2a323d;
+    --text:#dde3ea;
+    --text-dim:#8a95a3;
+    --accent:#6cbfa4;
+    --accent-soft:#1c2e29;
+    --code-bg:#1d232c;
+  }
+}
+:root[data-theme="dark"]{
+  --bg:#12161c; --surface:#181e26; --border:#2a323d; --text:#dde3ea;
+  --text-dim:#8a95a3; --accent:#6cbfa4; --accent-soft:#1c2e29; --code-bg:#1d232c;
+}
+:root[data-theme="light"]{
+  --bg:#f7f8fa; --surface:#ffffff; --border:#dde2e8; --text:#1a2230;
+  --text-dim:#5b6472; --accent:#2f6f5e; --accent-soft:#e4efec; --code-bg:#eef1f4;
+}
+*{box-sizing:border-box;}
+html,body{margin:0;padding:0;}
+body{
+  background:var(--bg);
+  color:var(--text);
+  font-family:var(--sans);
+  font-size:16px;
+  line-height:1.65;
+}
+.shell{
+  display:grid;
+  grid-template-columns:260px minmax(0,1fr);
+  gap:0;
+  max-width:1280px;
+  margin:0 auto;
+}
+nav.toc{
+  position:sticky;
+  top:0;
+  align-self:start;
+  height:100vh;
+  overflow-y:auto;
+  padding:2.5rem 1.5rem 2rem 2rem;
+  border-right:1px solid var(--border);
+}
+nav.toc .label{
+  font-family:var(--mono);
+  font-size:.7rem;
+  letter-spacing:.08em;
+  text-transform:uppercase;
+  color:var(--text-dim);
+  margin-bottom:1rem;
+}
+nav.toc ul{list-style:none;margin:0;padding:0;display:flex;flex-direction:column;gap:.55rem;}
+nav.toc a{
+  color:var(--text-dim);
+  text-decoration:none;
+  font-size:.85rem;
+  line-height:1.4;
+  display:block;
+}
+nav.toc a:hover, nav.toc a:focus-visible{color:var(--accent);}
+main{padding:2.5rem 3rem 6rem 3rem; min-width:0;}
+h1{
+  font-family:var(--serif);
+  font-size:2.1rem;
+  font-weight:600;
+  letter-spacing:-.01em;
+  text-wrap:balance;
+  margin:0 0 .5rem 0;
+}
+h2{
+  font-family:var(--serif);
+  font-size:1.4rem;
+  font-weight:600;
+  margin:3rem 0 1rem 0;
+  padding-top:.25rem;
+  border-top:1px solid var(--border);
+  padding-top:1.75rem;
+  scroll-margin-top:1.5rem;
+}
+h3{font-family:var(--serif); font-size:1.1rem; margin:1.75rem 0 .75rem 0;}
+p{max-width:70ch; color:var(--text); margin:0 0 1rem 0;}
+p strong{color:var(--text); font-weight:650;}
+code{
+  font-family:var(--mono);
+  font-size:.85em;
+  background:var(--code-bg);
+  padding:.12em .38em;
+  border-radius:4px;
+  color:var(--accent);
+}
+blockquote{
+  margin:1.25rem 0;
+  padding:.9rem 1.1rem;
+  background:var(--accent-soft);
+  border-radius:6px;
+  max-width:70ch;
+}
+blockquote, blockquote code{color:var(--text);}
+ul{max-width:70ch; padding-left:1.3rem; margin:0 0 1rem 0;}
+li{margin-bottom:.4rem;}
+hr{border:none; border-top:1px solid var(--border); margin:2.5rem 0;}
+.diagram-wrap{
+  background:var(--surface);
+  border:1px solid var(--border);
+  border-radius:10px;
+  padding:1.25rem;
+  margin:1rem 0 2rem 0;
+  overflow-x:auto;
+}
+.diagram-wrap pre.mermaid{margin:0;}
+.eyebrow{
+  font-family:var(--mono);
+  font-size:.72rem;
+  letter-spacing:.09em;
+  text-transform:uppercase;
+  color:var(--accent);
+  margin-bottom:.75rem;
+}
+@media (max-width:900px){
+  .shell{grid-template-columns:1fr;}
+  nav.toc{position:relative; height:auto; border-right:none; border-bottom:1px solid var(--border);}
+  main{padding:2rem 1.25rem 4rem 1.25rem;}
+}
+</style>
+
+<div class="shell">
+  <nav class="toc">
+    <div class="label">Contents</div>
+    <ul>
+      <li><a href="#1-complete-system-architecture">1. Complete System Architecture</a></li>
+      <li><a href="#2-project-directory-architecture">2. Project Directory Architecture</a></li>
+      <li><a href="#3-chat-request-flow-the-core-and-only-ingestion-path">3. Chat Request Flow</a></li>
+      <li><a href="#4-routing-engine-internal-flow">4. Routing Engine Internal Flow</a></li>
+      <li><a href="#5-database-architecture-er-diagram">5. Database Architecture (ER)</a></li>
+      <li><a href="#6-request-lifecycle-sequence-diagram">6. Request Lifecycle (Sequence)</a></li>
+      <li><a href="#7-component-dependency-graph">7. Component Dependency Graph</a></li>
+      <li><a href="#8-class-diagram">8. Class Diagram</a></li>
+      <li><a href="#9-provider-architecture">9. Provider Architecture</a></li>
+      <li><a href="#10-configuration-flow">10. Configuration Flow</a></li>
+      <li><a href="#11-analytics-pipeline">11. Analytics Pipeline</a></li>
+      <li><a href="#12-learning-pipeline-routing-learning-refresh">12. Learning Pipeline</a></li>
+      <li><a href="#13-decision-card-generation">13. Decision Card Generation</a></li>
+      <li><a href="#14-agent-pipeline-routing-agent-investigate">14. Agent Pipeline</a></li>
+      <li><a href="#15-external-integrations">15. External Integrations</a></li>
+      <li><a href="#16-end-to-end-master-flow">16. End-to-End Master Flow</a></li>
+      <li><a href="#appendix-things-this-document-deliberately-does-not-show">Appendix: What's Not Here</a></li>
+    </ul>
+  </nav>
+  <main>
+    <div class="eyebrow">Reverse-engineered · Implementation-accurate</div>
+    <h1>RoutingBridge — Backend Architecture</h1>
+<p>Reverse-engineered from the implementation (not the README). Every diagram below reflects actual code paths in <code>backend/</code>, <code>frontend/</code>, <code>config/</code>, <code>deploy/</code>, and <code>scripts/</code> as of this commit.</p>
+<blockquote><strong>Note on scope</strong>: this codebase has <strong>no PDF ingestion, no chunking, no embeddings, and no vector DB</strong> — there is no such feature anywhere in the repo (confirmed by reading every file under <code>backend/</code>). The requested "PDF Ingestion Flow" section is omitted rather than fabricated. What this system actually does is <strong>LLM request routing</strong>: classify a prompt, pick the cheapest capable model, call it, verify quality, and record every decision for audit/analytics/learning. All diagrams below reflect that.</blockquote>
+<hr>
+<h2 id="1-complete-system-architecture">1. Complete System Architecture</h2>
+<div class="diagram-wrap"><pre class="mermaid">flowchart TB
+    subgraph Client[&quot;Client Layer&quot;]
+        Browser[&quot;Browser&quot;]
+    end
+
+    subgraph Frontend[&quot;frontend/ — Streamlit (single container process)&quot;]
+        ST[&quot;streamlit_app.py&lt;br/&gt;Chat / History / Analytics / Settings pages&quot;]
+        Theme[&quot;theme.py&quot;]
+    end
+
+    subgraph Edge[&quot;deploy/ — nginx reverse proxy ($PORT)&quot;]
+        Nginx[&quot;nginx.conf.template&lt;br/&gt;routes /api/* -&gt; FastAPI, /* -&gt; Streamlit&quot;]
+    end
+
+    subgraph API[&quot;backend/main.py — FastAPI app&quot;]
+        Lifespan[&quot;lifespan(): validate_startup_config()&quot;]
+        Routers[&quot;Routers&quot;]
+    end
+
+    subgraph RoutersLayer[&quot;backend/routers/&quot;]
+        ChatR[&quot;chat.py — POST /chat&quot;]
+        HistR[&quot;history.py — GET /history&quot;]
+        StatsR[&quot;stats.py — GET /stats&quot;]
+        ModelsR[&quot;models.py — GET /models&quot;]
+        AnalyticsR[&quot;analytics.py — /analytics/*&quot;]
+        DecisionsR[&quot;decisions.py — GET /routing/decision/{id}&quot;]
+        AgentR[&quot;agent.py — /agent/*&quot;]
+    end
+
+    subgraph Services[&quot;backend/services/&quot;]
+        Classifier[&quot;classifier_service.py&quot;]
+        Heuristic[&quot;heuristic_classifier.py&quot;]
+        Engine[&quot;routing_engine.py&quot;]
+        CostEst[&quot;cost_estimator.py&quot;]
+        QualityV[&quot;quality_verifier.py&quot;]
+        DecisionSvc[&quot;decision_service.py&quot;]
+        AnalyticsSvc[&quot;analytics_service.py&quot;]
+        Learning[&quot;routing_learning.py&quot;]
+        Agent[&quot;routing_agent.py&quot;]
+        HistorySvc[&quot;history_service.py&quot;]
+        StatsSvc[&quot;stats_service.py&quot;]
+        InvestigationSvc[&quot;investigation_service.py&quot;]
+        QueryHelpers[&quot;query_helpers.py&quot;]
+    end
+
+    subgraph Providers[&quot;backend/services/providers/&quot;]
+        Factory[&quot;factory.py&quot;]
+        Base[&quot;base.py — LLMProvider ABC&quot;]
+        Gemini[&quot;gemini_provider.py&quot;]
+        OpenRouter[&quot;openrouter_provider.py&quot;]
+    end
+
+    subgraph Config[&quot;config/ + backend/utils/&quot;]
+        RoutingYaml[&quot;routing.yaml&quot;]
+        PricingYaml[&quot;pricing.yaml&quot;]
+        YamlLoader[&quot;yaml_config.py&quot;]
+        Settings[&quot;utils/config.py — Settings (.env)&quot;]
+        StartupVal[&quot;utils/startup_validation.py&quot;]
+    end
+
+    subgraph DB[&quot;backend/database/ — SQLAlchemy ORM&quot;]
+        DbEngine[&quot;db.py — engine/session&quot;]
+        Models[&quot;models.py — 9 tables&quot;]
+        Postgres[(&quot;Postgres/Supabase&lt;br/&gt;or SQLite (local)&quot;)]
+    end
+
+    subgraph External[&quot;External LLM Providers&quot;]
+        GoogleAPI[&quot;Google Generative AI API&lt;br/&gt;(Gemini)&quot;]
+        OpenRouterAPI[&quot;OpenRouter API&lt;br/&gt;(Mistral / DeepSeek / Qwen / Llama)&quot;]
+    end
+
+    Browser --&gt;|HTTP| Nginx
+    Nginx --&gt;|&quot;/api/*&quot;| API
+    Nginx --&gt;|&quot;/*&quot;| ST
+    ST --&gt;|httpx to /api/*| Nginx
+    ST --- Theme
+
+    API --&gt; Lifespan
+    Lifespan --&gt; StartupVal
+    API --&gt; Routers --&gt; RoutersLayer
+
+    ChatR --&gt; Classifier
+    ChatR --&gt; Engine
+    ChatR --&gt; Factory
+    ChatR --&gt; CostEst
+    ChatR --&gt; QualityV
+    ChatR --&gt; DecisionSvc
+
+    HistR --&gt; HistorySvc
+    StatsR --&gt; StatsSvc
+    ModelsR --&gt; YamlLoader
+    AnalyticsR --&gt; AnalyticsSvc
+    AnalyticsR --&gt; Learning
+    DecisionsR --&gt; DecisionSvc
+    AgentR --&gt; Agent
+    AgentR --&gt; InvestigationSvc
+
+    Classifier --&gt; Heuristic
+    Classifier --&gt; Factory
+    Classifier --&gt; CostEst
+    QualityV --&gt; Factory
+    Engine --&gt; YamlLoader
+    Classifier --&gt; YamlLoader
+    QualityV --&gt; YamlLoader
+    CostEst --&gt; YamlLoader
+    Learning --&gt; YamlLoader
+    Agent --&gt; YamlLoader
+
+    Factory --&gt; Base
+    Factory --&gt; Gemini
+    Factory --&gt; OpenRouter
+    Gemini --&gt; GoogleAPI
+    OpenRouter --&gt; OpenRouterAPI
+
+    YamlLoader --&gt; RoutingYaml
+    YamlLoader --&gt; PricingYaml
+    StartupVal --&gt; RoutingYaml
+    StartupVal --&gt; PricingYaml
+    Settings -.env vars.-&gt; Classifier
+    Settings -.env vars.-&gt; Factory
+    Settings -.env vars.-&gt; DbEngine
+
+    DecisionSvc --&gt; Models
+    AnalyticsSvc --&gt; Models
+    Learning --&gt; Models
+    Agent --&gt; Models
+    HistorySvc --&gt; Models
+    StatsSvc --&gt; Models
+    InvestigationSvc --&gt; Models
+    QueryHelpers -.shared SQL expr.-&gt; AnalyticsSvc
+    QueryHelpers -.shared SQL expr.-&gt; Learning
+    QueryHelpers -.shared SQL expr.-&gt; Agent
+
+    Models --&gt; DbEngine --&gt; Postgres</pre></div>
+<hr>
+<h2 id="2-project-directory-architecture">2. Project Directory Architecture</h2>
+<div class="diagram-wrap"><pre class="mermaid">flowchart LR
+    Root[&quot;routingbridge/&quot;]
+
+    Root --&gt; BE[&quot;backend/&quot;]
+    Root --&gt; FE[&quot;frontend/&quot;]
+    Root --&gt; CFG[&quot;config/&quot;]
+    Root --&gt; Deploy[&quot;deploy/&quot;]
+    Root --&gt; Scripts[&quot;scripts/&quot;]
+    Root --&gt; Tests[&quot;tests/&quot;]
+    Root --&gt; Docs[&quot;docs/&quot;]
+    Root --&gt; Infra[&quot;Dockerfile, docker-compose.yml, render.yaml&quot;]
+
+    BE --&gt; Main[&quot;main.py — FastAPI app + lifespan&quot;]
+    BE --&gt; Routers[&quot;routers/ — HTTP surface, no business logic&quot;]
+    BE --&gt; Services[&quot;services/ — business logic&quot;]
+    BE --&gt; DBpkg[&quot;database/ — SQLAlchemy models + session&quot;]
+    BE --&gt; Schemas[&quot;schemas/ — Pydantic request/response models&quot;]
+    BE --&gt; Utils[&quot;utils/ — config, yaml loading, logging, startup checks&quot;]
+
+    Services --&gt; ProvidersDir[&quot;providers/ — LLMProvider abstraction&quot;]
+
+    Routers --&gt;|&quot;calls&quot;| Services
+    Services --&gt;|&quot;reads/writes&quot;| DBpkg
+    Routers --&gt;|&quot;validates with&quot;| Schemas
+    Services --&gt;|&quot;returns&quot;| Schemas
+    Utils --&gt;|&quot;loaded by&quot;| Services
+    Utils --&gt;|&quot;loaded by&quot;| Routers
+    ProvidersDir --&gt;|&quot;used by&quot;| Services
+
+    CFG --&gt; RoutingY[&quot;routing.yaml — tiers/thresholds/policy&quot;]
+    CFG --&gt; PricingY[&quot;pricing.yaml — per-model $/1M tokens&quot;]
+    CFG -.read by.-&gt; Utils
+
+    FE --&gt; StApp[&quot;streamlit_app.py — Chat/History/Analytics/Settings&quot;]
+    FE --&gt; ThemeF[&quot;theme.py&quot;]
+    FE -.HTTP calls.-&gt; Routers
+
+    Deploy --&gt; Nginx2[&quot;nginx.conf.template&quot;]
+    Deploy --&gt; StartSh[&quot;start.sh — boots nginx + FastAPI + Streamlit&quot;]
+
+    Scripts --&gt; Bootstrap[&quot;bootstrap_db.py — create_all() + seed RoutingPolicy&quot;]
+    Bootstrap -.writes.-&gt; DBpkg
+
+    Tests -.exercises.-&gt; BE
+
+    Docs --&gt; ArchMd[&quot;architecture.md, pr1-4 write-ups, production-stabilization.md&quot;]</pre></div>
+<hr>
+<h2 id="3-chat-request-flow-the-core-and-only-ingestion-path">3. Chat Request Flow (the core, and only, ingestion path)</h2>
+<div class="diagram-wrap"><pre class="mermaid">flowchart TD
+    U[&quot;User types a message&quot;] --&gt; FEUI[&quot;Streamlit chat page&quot;]
+    FEUI --&gt;|&quot;httpx POST /api/chat&lt;br/&gt;{prompt}&quot;| Nginx[&quot;nginx&quot;]
+    Nginx --&gt; Router[&quot;chat.py: POST /chat&quot;]
+    Router --&gt; Validate[&quot;ChatRequest schema validation&lt;br/&gt;(pydantic)&quot;]
+    Validate --&gt; ReqId[&quot;request_id = uuid4()&quot;]
+
+    ReqId --&gt; Classify[&quot;classifier.classify(prompt)&quot;]
+    Classify --&gt; LLMClassify{&quot;OpenRouter classifier&lt;br/&gt;call succeeds &amp; parses?&quot;}
+    LLMClassify --&gt;|&quot;yes&quot;| Decision[&quot;RoutingDecision&lt;br/&gt;(tier, task_type, confidence, reason)&quot;]
+    LLMClassify --&gt;|&quot;no: API/JSON error&quot;| Heuristic[&quot;heuristic_classifier&lt;br/&gt;word-count fallback&quot;]
+    Heuristic --&gt; Decision
+
+    Decision --&gt; RouteSel[&quot;routing_engine.select(decision)&quot;]
+    RouteSel --&gt; Escalate{&quot;confidence &lt; low&lt;br/&gt;threshold (0.6)?&quot;}
+    Escalate --&gt;|&quot;yes&quot;| Bump[&quot;tier += 1 (escalated=true)&quot;]
+    Escalate --&gt;|&quot;no&quot;| Keep[&quot;tier unchanged&quot;]
+    Bump --&gt; TierMap
+    Keep --&gt; TierMap[&quot;map tier -&gt; provider/model&lt;br/&gt;via routing.yaml&quot;]
+
+    TierMap --&gt; ProviderSel[&quot;providers.factory.get_provider(name)&quot;]
+    ProviderSel --&gt; Gen[&quot;provider.generate(prompt, model, max_tokens)&quot;]
+    Gen --&gt;|&quot;google&quot;| GeminiCall[&quot;Gemini API&quot;]
+    Gen --&gt;|&quot;openrouter&quot;| ORCall[&quot;OpenRouter API&quot;]
+    GeminiCall --&gt; ProviderResp[&quot;ProviderResponse&lt;br/&gt;(text, input_tokens, output_tokens)&quot;]
+    ORCall --&gt; ProviderResp
+
+    ProviderResp --&gt;|&quot;exception&quot;| FailProvider[&quot;decision_service.record_failure()&lt;br/&gt;stage=provider_call -&gt; 502&quot;]
+    ProviderResp --&gt;|&quot;ok&quot;| CostCalc[&quot;cost_estimator.estimate_cost()&lt;br/&gt;via pricing.yaml&quot;]
+    CostCalc --&gt;|&quot;exception&quot;| FailCost[&quot;record_failure()&lt;br/&gt;stage=cost_estimation -&gt; 502&quot;]
+    CostCalc --&gt;|&quot;ok&quot;| TierCheck{&quot;tier == ADVANCED?&quot;}
+
+    TierCheck --&gt;|&quot;yes: skip&quot;| Persist
+    TierCheck --&gt;|&quot;no&quot;| QualityCheck[&quot;quality_verifier.verify(prompt, answer)&lt;br/&gt;LLM-judge pass/fail&quot;]
+    QualityCheck --&gt; Persist[&quot;decision_service.record()&lt;br/&gt;ONE transaction&quot;]
+
+    Persist --&gt; T1[(&quot;requests&quot;)]
+    Persist --&gt; T2[(&quot;routing_decisions&quot;)]
+    Persist --&gt; T3[(&quot;execution_results&quot;)]
+    Persist --&gt; T4[(&quot;quality_results (nullable)&quot;)]
+    Persist --&gt;|&quot;exception&quot;| FailPersist[&quot;record_failure()&lt;br/&gt;stage=persistence -&gt; 500&quot;]
+
+    T1 &amp; T2 &amp; T3 &amp; T4 --&gt; Response[&quot;ChatResponse schema&quot;]
+    Response --&gt; Nginx2[&quot;nginx&quot;] --&gt; FEUI2[&quot;Streamlit renders answer&lt;br/&gt;+ routing metadata&quot;] --&gt; U2[&quot;User sees answer&quot;]</pre></div>
+<hr>
+<h2 id="4-routing-engine-internal-flow">4. Routing Engine Internal Flow</h2>
+<div class="diagram-wrap"><pre class="mermaid">flowchart TD
+    In[&quot;RoutingDecision&lt;br/&gt;(from classifier or heuristic)&quot;] --&gt; ReadCfg[&quot;load_routing_config()&lt;br/&gt;routing.yaml, cached&quot;]
+
+    ReadCfg --&gt; Thresh[&quot;confidence_thresholds:&lt;br/&gt;high=0.9, low=0.6,&lt;br/&gt;escalate_on_low_confidence=true&quot;]
+    Thresh --&gt; Check{&quot;escalate flag AND&lt;br/&gt;confidence &lt; low?&quot;}
+
+    Check --&gt;|&quot;no&quot;| NoEsc[&quot;tier = decision.routing_tier&lt;br/&gt;escalated=false&quot;]
+    Check --&gt;|&quot;yes&quot;| NextTier{&quot;_next_tier(tier)&lt;br/&gt;BASIC-&gt;STANDARD-&gt;ADVANCED&quot;}
+    NextTier --&gt;|&quot;tier exists&quot;| Esc[&quot;tier = next tier&lt;br/&gt;escalated=true&lt;br/&gt;reason appended&quot;]
+    NextTier --&gt;|&quot;already ADVANCED&quot;| NoEsc
+
+    NoEsc --&gt; TierCfg[&quot;tiers[tier] from routing.yaml&lt;br/&gt;{provider, model, max_output_tokens, reasons}&quot;]
+    Esc --&gt; TierCfg
+
+    TierCfg --&gt; Pricing[&quot;pricing.yaml lookup&lt;br/&gt;(separate call, in cost_estimator)&quot;]
+    TierCfg --&gt; Result[&quot;RoutingResult:&lt;br/&gt;provider, model, max_output_tokens,&lt;br/&gt;tier, original_tier, escalated, reasons[]&quot;]
+
+    Pricing -.consumed later by.-&gt; CostFn[&quot;cost_estimator.estimate_cost()&quot;]
+    Result --&gt; PolicyStamp[&quot;decision_service.record() stamps&lt;br/&gt;routing_policy_version from routing.yaml&quot;]
+    PolicyStamp --&gt; DBWrite[(&quot;routing_decisions.routing_policy_version&quot;)]
+
+    subgraph Note[&quot;Never applied automatically&quot;]
+      direction TB
+      NoteText[&quot;optimization_recommendations from routing_learning.py\nare NEVER read by this engine.\nChanging what gets routed requires a human\nediting routing.yaml&#x27;s tiers block.&quot;]
+    end
+    DBWrite -.-&gt; Note</pre></div>
+<hr>
+<h2 id="5-database-architecture-er-diagram">5. Database Architecture (ER Diagram)</h2>
+<div class="diagram-wrap"><pre class="mermaid">erDiagram
+    REQUESTS ||--|| ROUTING_DECISIONS : &quot;1:1 by request_id&quot;
+    REQUESTS ||--|| EXECUTION_RESULTS : &quot;1:1 by request_id&quot;
+    REQUESTS ||--o| QUALITY_RESULTS : &quot;1:1 optional (skipped for ADVANCED tier)&quot;
+    ROUTING_POLICIES ||--o{ ROUTING_DECISIONS : &quot;policy_version referenced (no FK)&quot;
+    ROUTING_PATTERNS ||--o{ OPTIMIZATION_RECOMMENDATIONS : &quot;matched by (task_type,tier,provider,model,policy_version), no FK&quot;
+    OPTIMIZATION_RECOMMENDATIONS ||--o| ROUTING_DECISIONS : &quot;looked up at read time by attribute match, no FK&quot;
+
+    REQUESTS {
+        string request_id PK
+        string prompt
+        string response
+        string normalized_prompt
+        string prompt_hash &quot;indexed&quot;
+        datetime created_at
+    }
+    ROUTING_DECISIONS {
+        string request_id PK_FK
+        string classifier_tier
+        string final_tier
+        float classifier_confidence
+        string task_type
+        string task_subcategory &quot;nullable&quot;
+        string classifier_reasoning
+        string routing_reasoning
+        string selected_provider
+        string selected_model
+        string routing_policy_version
+        string escalation_reason &quot;nullable&quot;
+    }
+    EXECUTION_RESULTS {
+        string request_id PK_FK
+        bool provider_success
+        float latency_ms
+        int input_tokens
+        int output_tokens
+        float estimated_cost
+        string error_message &quot;nullable&quot;
+    }
+    QUALITY_RESULTS {
+        string request_id PK_FK
+        bool verdict
+        float quality_score &quot;nullable, unused&quot;
+        string verifier_reasoning
+        datetime verified_at
+    }
+    FAILED_REQUESTS {
+        string request_id PK
+        string prompt
+        string stage
+        string provider &quot;nullable&quot;
+        string model &quot;nullable&quot;
+        string error_message
+        string status
+        datetime created_at
+    }
+    ROUTING_POLICIES {
+        string version PK
+        json config
+        bool is_active
+        datetime created_at
+    }
+    ROUTING_PATTERNS {
+        int id PK
+        string task_type
+        string task_subcategory &quot;nullable&quot;
+        string provider
+        string model
+        string tier
+        string policy_version
+        int sample_size
+        float average_cost
+        float average_latency
+        float pass_rate &quot;nullable&quot;
+        float failure_rate &quot;nullable&quot;
+        datetime last_updated
+    }
+    OPTIMIZATION_RECOMMENDATIONS {
+        string recommendation_id PK
+        string task_type
+        string task_subcategory &quot;nullable&quot;
+        string policy_version
+        string current_provider
+        string recommended_provider
+        string current_model
+        string recommended_model
+        float expected_cost_change
+        float expected_quality_change
+        float confidence
+        string reason
+        json evidence
+        string status
+        datetime created_at
+    }
+    INVESTIGATION_REPORTS {
+        string report_id PK
+        datetime created_at
+        string policy_version
+        string executive_summary
+        string risk_level
+        float confidence
+        json findings
+        json suggested_actions
+        json investigation_steps
+        json tools_used
+    }</pre></div>
+<p><strong>Notes derived from the code, not assumed:</strong></p>
+<ul><li><code>requests → {routing_decisions, execution_results, quality_results}</code> are only *column-level* <code>ForeignKey</code>s — no ORM <code>relationship()</code>. <code>decision_service.record()</code> calls <code>db.flush()</code> after inserting <code>Request</code> specifically because Postgres enforces the FK and SQLite (dev) silently didn't (see comment in <code>decision_service.py</code>).</li><li><code>routing_patterns</code> and <code>optimization_recommendations</code> are <strong>wholesale delete+reinsert</strong> on every <code>routing_learning.refresh()</code> — no update-in-place, no history retained.</li><li><code>optimization_recommendations</code> is matched to a <code>routing_decisions</code> row at <strong>read time</strong> in <code>decision_service.get_decision_card()</code> by exact attribute equality (<code>policy_version</code>, <code>task_type</code>, <code>task_subcategory</code>, <code>current_provider</code>/<code>model</code>), not a foreign key.</li></ul>
+<hr>
+<h2 id="6-request-lifecycle-sequence-diagram">6. Request Lifecycle (Sequence Diagram)</h2>
+<div class="diagram-wrap"><pre class="mermaid">sequenceDiagram
+    actor User
+    participant FE as Streamlit
+    participant NGINX as nginx
+    participant API as FastAPI /chat
+    participant CLS as ClassifierService
+    participant HEUR as heuristic_classifier
+    participant ENG as RoutingEngine
+    participant PROV as LLMProvider (Gemini/OpenRouter)
+    participant COST as cost_estimator
+    participant QV as QualityVerifier
+    participant DEC as decision_service
+    participant DB as Database
+
+    User-&gt;&gt;FE: types prompt, hits send
+    FE-&gt;&gt;NGINX: POST /api/chat {prompt}
+    NGINX-&gt;&gt;API: POST /chat
+    API-&gt;&gt;CLS: classify(prompt)
+    alt LLM classifier reachable &amp; valid JSON
+        CLS-&gt;&gt;PROV: generate(classifier_prompt, response_format=json_object)
+        PROV--&gt;&gt;CLS: ProviderResponse
+        CLS--&gt;&gt;API: RoutingDecisionOutcome
+    else classifier failure
+        CLS-&gt;&gt;HEUR: classify_heuristically(prompt)
+        HEUR--&gt;&gt;CLS: RoutingDecision (fallback)
+        CLS--&gt;&gt;API: RoutingDecisionOutcome (fallback_used=true)
+    end
+
+    API-&gt;&gt;ENG: select(decision)
+    ENG--&gt;&gt;API: RoutingResult (provider, model, tier, escalated)
+
+    API-&gt;&gt;PROV: generate(prompt, model, max_tokens)
+    alt provider call fails
+        PROV--&gt;&gt;API: exception
+        API-&gt;&gt;DEC: record_failure(stage=provider_call)
+        DEC-&gt;&gt;DB: INSERT failed_requests
+        API--&gt;&gt;FE: 502
+    else success
+        PROV--&gt;&gt;API: ProviderResponse(text, tokens)
+        API-&gt;&gt;COST: estimate_cost(model, tokens)
+        COST--&gt;&gt;API: model_cost
+        opt tier != ADVANCED
+            API-&gt;&gt;QV: verify(prompt, answer)
+            QV-&gt;&gt;PROV: generate(verdict_prompt, response_format=json_object)
+            PROV--&gt;&gt;QV: ProviderResponse
+            QV--&gt;&gt;API: QualityVerdict | None
+        end
+        API-&gt;&gt;DEC: record(all fields)
+        DEC-&gt;&gt;DB: INSERT requests, routing_decisions,&lt;br/&gt;execution_results, quality_results (1 txn)
+        DB--&gt;&gt;DEC: commit
+        DEC--&gt;&gt;API: ok
+        API--&gt;&gt;NGINX: ChatResponse
+        NGINX--&gt;&gt;FE: 200 JSON
+        FE--&gt;&gt;User: renders answer + routing metadata
+    end</pre></div>
+<hr>
+<h2 id="7-component-dependency-graph">7. Component Dependency Graph</h2>
+<div class="diagram-wrap"><pre class="mermaid">flowchart LR
+    chat.py --&gt; classifier_service.py
+    chat.py --&gt; routing_engine.py
+    chat.py --&gt; providers/factory.py
+    chat.py --&gt; cost_estimator.py
+    chat.py --&gt; quality_verifier.py
+    chat.py --&gt; decision_service.py
+
+    classifier_service.py --&gt; heuristic_classifier.py
+    classifier_service.py --&gt; providers/factory.py
+    classifier_service.py --&gt; cost_estimator.py
+    classifier_service.py --&gt; yaml_config.py
+
+    quality_verifier.py --&gt; providers/factory.py
+    quality_verifier.py --&gt; classifier_service.py
+    quality_verifier.py --&gt; yaml_config.py
+
+    routing_engine.py --&gt; yaml_config.py
+    cost_estimator.py --&gt; yaml_config.py
+
+    providers/factory.py --&gt; providers/gemini_provider.py
+    providers/factory.py --&gt; providers/openrouter_provider.py
+    providers/gemini_provider.py --&gt; providers/base.py
+    providers/openrouter_provider.py --&gt; providers/base.py
+
+    decision_service.py --&gt; database/models.py
+    decision_service.py --&gt; yaml_config.py
+    decision_service.py --&gt; schemas/decision_card.py
+
+    analytics.py --&gt; analytics_service.py
+    analytics.py --&gt; routing_learning.py
+    analytics_service.py --&gt; database/models.py
+    analytics_service.py --&gt; query_helpers.py
+    routing_learning.py --&gt; database/models.py
+    routing_learning.py --&gt; query_helpers.py
+    routing_learning.py --&gt; yaml_config.py
+
+    agent.py --&gt; routing_agent.py
+    agent.py --&gt; investigation_service.py
+    routing_agent.py --&gt; database/models.py
+    routing_agent.py --&gt; query_helpers.py
+    routing_agent.py --&gt; yaml_config.py
+    investigation_service.py --&gt; database/models.py
+
+    decisions.py --&gt; decision_service.py
+    history.py --&gt; history_service.py
+    history_service.py --&gt; database/models.py
+    stats.py --&gt; stats_service.py
+    stats_service.py --&gt; database/models.py
+    stats_service.py --&gt; cost_estimator.py
+    stats_service.py --&gt; yaml_config.py
+    models.py --&gt; yaml_config.py
+
+    main.py --&gt; chat.py &amp; history.py &amp; stats.py &amp; models.py &amp; analytics.py &amp; decisions.py &amp; agent.py
+    main.py --&gt; startup_validation.py
+    startup_validation.py --&gt; yaml_config.py</pre></div>
+<hr>
+<h2 id="8-class-diagram">8. Class Diagram</h2>
+<div class="diagram-wrap"><pre class="mermaid">classDiagram
+    class LLMProvider {
+        &lt;&lt;abstract&gt;&gt;
+        +generate(prompt, model, max_tokens, response_format) ProviderResponse
+    }
+    class GeminiProvider {
+        -api_key
+        +generate(...) ProviderResponse
+    }
+    class OpenRouterProvider {
+        -api_key
+        +generate(...) ProviderResponse
+    }
+    class ProviderResponse {
+        +text: str
+        +input_tokens: int
+        +output_tokens: int
+    }
+    LLMProvider &lt;|.. GeminiProvider
+    LLMProvider &lt;|.. OpenRouterProvider
+    LLMProvider ..&gt; ProviderResponse : returns
+
+    class ClassifierService {
+        -settings: Settings
+        -provider: LLMProvider
+        +classify(prompt) RoutingDecisionOutcome
+        -_classify_with_llm(prompt)
+    }
+    class QualityVerifier {
+        -provider: LLMProvider
+        +verify(prompt, response) QualityVerdict
+    }
+    class RoutingEngine {
+        -_config: dict
+        +select(decision: RoutingDecision) RoutingResult
+        -_next_tier(tier)
+    }
+    ClassifierService --&gt; LLMProvider : uses
+    QualityVerifier --&gt; LLMProvider : uses
+    ClassifierService ..&gt; RoutingDecisionOutcome : returns
+
+    class RoutingDecision {
+        +routing_tier: RoutingTier
+        +task_type: str
+        +reasoning_level: ReasoningLevel
+        +confidence: float
+        +reason: str
+    }
+    class RoutingDecisionOutcome {
+        +decision: RoutingDecision
+        +classifier_model: str
+        +latency_ms: float
+        +input_tokens: int
+        +output_tokens: int
+        +cost: float
+        +fallback_used: bool
+    }
+    class RoutingResult {
+        +provider: str
+        +model: str
+        +max_output_tokens: int
+        +tier: RoutingTier
+        +original_tier: RoutingTier
+        +escalated: bool
+        +reasons: list~str~
+    }
+    class RoutingTier {
+        &lt;&lt;enum&gt;&gt;
+        BASIC
+        STANDARD
+        ADVANCED
+    }
+    RoutingDecisionOutcome --&gt; RoutingDecision
+    RoutingEngine ..&gt; RoutingDecision : consumes
+    RoutingEngine ..&gt; RoutingResult : produces
+    RoutingDecision --&gt; RoutingTier
+
+    class Request {
+        +request_id: str
+        +prompt: str
+        +response: str
+        +normalized_prompt: str
+        +prompt_hash: str
+        +created_at: datetime
+    }
+    class RoutingDecisionRow {
+        +request_id: str
+        +classifier_tier: str
+        +final_tier: str
+        +selected_provider: str
+        +selected_model: str
+        +routing_policy_version: str
+    }
+    class ExecutionResult {
+        +request_id: str
+        +latency_ms: float
+        +input_tokens: int
+        +output_tokens: int
+        +estimated_cost: float
+    }
+    class QualityResult {
+        +request_id: str
+        +verdict: bool
+        +verifier_reasoning: str
+    }
+    Request &quot;1&quot; --&gt; &quot;1&quot; RoutingDecisionRow : request_id
+    Request &quot;1&quot; --&gt; &quot;1&quot; ExecutionResult : request_id
+    Request &quot;1&quot; --&gt; &quot;0..1&quot; QualityResult : request_id
+
+    class DecisionCard {
+        +request_id: str
+        +selected_provider: str
+        +selected_model: str
+        +reasoning_steps: list~DecisionReason~
+        +recommendation_available: bool
+    }
+    class decision_service {
+        &lt;&lt;module&gt;&gt;
+        +record(...)
+        +record_failure(...)
+        +get_decision_card(db, request_id) DecisionCard
+    }
+    decision_service ..&gt; DecisionCard : builds
+    decision_service ..&gt; Request
+    decision_service ..&gt; RoutingDecisionRow
+    decision_service ..&gt; ExecutionResult
+    decision_service ..&gt; QualityResult</pre></div>
+<hr>
+<h2 id="9-provider-architecture">9. Provider Architecture</h2>
+<div class="diagram-wrap"><pre class="mermaid">flowchart TD
+    Caller[&quot;chat.py / classifier_service.py / quality_verifier.py&quot;]
+    Caller --&gt; FactoryFn[&quot;factory.get_provider(name, settings)&quot;]
+
+    FactoryFn --&gt;|&quot;name == &#x27;google&#x27;&quot;| GP[&quot;GeminiProvider(api_key)&quot;]
+    FactoryFn --&gt;|&quot;name == &#x27;openrouter&#x27;&quot;| ORP[&quot;OpenRouterProvider(api_key)&quot;]
+    FactoryFn --&gt;|&quot;anything else&quot;| Err[&quot;raise ValueError&quot;]
+
+    GP -.implements.-&gt; Iface[&quot;LLMProvider (ABC)&lt;br/&gt;generate(prompt, model, max_tokens, response_format)&quot;]
+    ORP -.implements.-&gt; Iface
+
+    GP --&gt; GSDK[&quot;google.generativeai SDK&lt;br/&gt;GenerativeModel.generate_content()&quot;]
+    GSDK --&gt; GAPI[&quot;Google Generative AI API&quot;]
+
+    ORP --&gt; HttpxCall[&quot;httpx.post(OPENROUTER_URL)&lt;br/&gt;OpenAI-compatible /chat/completions&quot;]
+    HttpxCall --&gt; ORAPI[&quot;OpenRouter API&lt;br/&gt;(routes to Mistral / DeepSeek / Qwen / Llama)&quot;]
+
+    Iface --&gt; Norm[&quot;ProviderResponse&lt;br/&gt;{text, input_tokens, output_tokens}&lt;br/&gt;identical shape regardless of SDK&quot;]
+
+    subgraph Future[&quot;Adding a third provider&quot;]
+      direction LR
+      NewClass[&quot;Write one new class implementing LLMProvider&quot;]
+      NewClass -.no changes needed in.-&gt; Caller
+      NewClass -.no changes needed in.-&gt; RoutingEngine2[&quot;routing_engine.py&quot;]
+    end</pre></div>
+<hr>
+<h2 id="10-configuration-flow">10. Configuration Flow</h2>
+<div class="diagram-wrap"><pre class="mermaid">flowchart TD
+    EnvFile[&quot;.env / environment variables&quot;] --&gt; SettingsCls[&quot;utils/config.py: Settings(BaseSettings)&lt;br/&gt;google_api_key, openrouter_api_key,&lt;br/&gt;database_url, log_level,&lt;br/&gt;easy_max_words, medium_max_words&quot;]
+    SettingsCls --&gt;|&quot;get_settings(), lru_cache&quot;| SettingsSingleton((&quot;Settings singleton&lt;br/&gt;(1 per process)&quot;))
+
+    RoutingYamlFile[&quot;config/routing.yaml&quot;] --&gt; YamlLoad[&quot;utils/yaml_config.py:&lt;br/&gt;load_routing_config() / load_pricing_config()&quot;]
+    PricingYamlFile[&quot;config/pricing.yaml&quot;] --&gt; YamlLoad
+    YamlLoad --&gt;|&quot;cached&quot;| YamlSingleton((&quot;parsed config dicts&quot;))
+
+    SettingsSingleton --&gt; DbEngineC[&quot;database/db.py: create_engine(database_url)&quot;]
+    SettingsSingleton --&gt; ProviderKeys[&quot;providers/factory.py: reads *_api_key&quot;]
+    SettingsSingleton --&gt; HeuristicCfg[&quot;heuristic_classifier.py: easy/medium_max_words&quot;]
+
+    YamlSingleton --&gt; RoutingEngineC[&quot;routing_engine.py: tiers, confidence_thresholds&quot;]
+    YamlSingleton --&gt; ClassifierCfgC[&quot;classifier_service.py: classifier provider/model&quot;]
+    YamlSingleton --&gt; QualityCfgC[&quot;quality_verifier.py: judge model&quot;]
+    YamlSingleton --&gt; CostCfgC[&quot;cost_estimator.py: per-model pricing&quot;]
+    YamlSingleton --&gt; LearningCfgC[&quot;routing_learning.py: min_sample_size,&lt;br/&gt;learning.apply_recommendations&quot;]
+    YamlSingleton --&gt; AgentCfgC[&quot;routing_agent.py: policy_version, min_sample_size&quot;]
+    YamlSingleton --&gt; ModelsEndpointC[&quot;routers/models.py: exposes config read-only&quot;]
+    YamlSingleton --&gt; DecisionSvcC[&quot;decision_service.py: stamps routing_policy_version&quot;]
+
+    RoutingYamlFile --&gt; StartupValC[&quot;utils/startup_validation.py&lt;br/&gt;fails fast at boot on:&lt;br/&gt;unknown provider, unpriced model,&lt;br/&gt;inverted confidence thresholds&quot;]
+    PricingYamlFile --&gt; StartupValC
+    StartupValC --&gt;|&quot;blocks boot on failure&quot;| MainApp[&quot;main.py lifespan()&quot;]
+
+    RoutingYamlFile -.snapshotted manually via.-&gt; BootstrapScript[&quot;scripts/bootstrap_db.py&quot;]
+    BootstrapScript --&gt; PolicyTable[(&quot;routing_policies table&quot;)]</pre></div>
+<p><code>policy_version</code> inside <code>routing.yaml</code> is bumped by hand whenever tiers/thresholds change; it is the join key between a routing decision and the exact policy that produced it.</p>
+<hr>
+<h2 id="11-analytics-pipeline">11. Analytics Pipeline</h2>
+<div class="diagram-wrap"><pre class="mermaid">flowchart TD
+    RawTables[(&quot;requests, routing_decisions,&lt;br/&gt;execution_results, quality_results&quot;)]
+
+    RawTables --&gt; AnalyticsSvc2[&quot;analytics_service.py&lt;br/&gt;(read-only aggregation)&quot;]
+    AnalyticsSvc2 --&gt; Overview[&quot;GET /analytics/routing&lt;br/&gt;providers[], models[], task_types[],&lt;br/&gt;tier_distribution, daily_metrics&quot;]
+    AnalyticsSvc2 --&gt; PatternsEP[&quot;GET /analytics/patterns&lt;br/&gt;-&gt; routing_patterns table&quot;]
+    AnalyticsSvc2 --&gt; RecsEP[&quot;GET /analytics/recommendations&lt;br/&gt;-&gt; optimization_recommendations table&quot;]
+
+    RawTables --&gt; StatsSvc2[&quot;stats_service.py&quot;]
+    StatsSvc2 --&gt; StatsEP[&quot;GET /stats&lt;br/&gt;total_requests, total_cost, avg_latency,&lt;br/&gt;estimated_savings vs ADVANCED tier,&lt;br/&gt;quality_pass_rate&quot;]
+
+    RawTables --&gt; HistorySvc2[&quot;history_service.py&quot;]
+    HistorySvc2 --&gt; HistoryEP[&quot;GET /history&lt;br/&gt;joined per-request rows, paginated&quot;]
+
+    RawTables --&gt;|&quot;explicit POST trigger only&quot;| RefreshEP[&quot;POST /analytics/refresh&quot;]
+    RefreshEP --&gt; LearningModule[&quot;routing_learning.py&lt;br/&gt;(see Learning Pipeline)&quot;]
+    LearningModule --&gt; PatternsTable[(&quot;routing_patterns&quot;)]
+    LearningModule --&gt; RecsTable[(&quot;optimization_recommendations&quot;)]
+    PatternsTable -.feed.-&gt; PatternsEP
+    RecsTable -.feed.-&gt; RecsEP
+
+    QueryHelpers2[&quot;query_helpers.py: PASS_RATE&lt;br/&gt;(shared CASE/AVG expression)&quot;] -.used by.-&gt; AnalyticsSvc2
+    QueryHelpers2 -.used by.-&gt; LearningModule
+    QueryHelpers2 -.used by.-&gt; Agent2[&quot;routing_agent.py&quot;]</pre></div>
+<hr>
+<h2 id="12-learning-pipeline-routing-learning-refresh">12. Learning Pipeline (<code>routing_learning.refresh()</code>)</h2>
+<div class="diagram-wrap"><pre class="mermaid">flowchart TD
+    Trigger[&quot;POST /analytics/refresh&lt;br/&gt;(manual only — no schedule, no live-path write)&quot;] --&gt; Scan[&quot;Query: routing_decisions&lt;br/&gt;JOIN execution_results&lt;br/&gt;OUTER JOIN quality_results&quot;]
+
+    Scan --&gt; Group[&quot;GROUP BY task_type, task_subcategory,&lt;br/&gt;provider, model, tier, policy_version&quot;]
+    Group --&gt; Agg[&quot;Aggregate per group:&lt;br/&gt;sample_size = COUNT&lt;br/&gt;average_cost = AVG(estimated_cost)&lt;br/&gt;average_latency = AVG(latency_ms)&lt;br/&gt;pass_rate = PASS_RATE expr&quot;]
+
+    Agg --&gt; WipePatterns[&quot;DELETE all routing_patterns&quot;]
+    WipePatterns --&gt; InsertPatterns[&quot;INSERT recomputed rows&quot;]
+    InsertPatterns --&gt; PatternsT[(&quot;routing_patterns&quot;)]
+
+    PatternsT --&gt; RecLoop[&quot;For each (task_type, tier)&lt;br/&gt;under CURRENT policy_version:&quot;]
+    RecLoop --&gt; FindCurrent[&quot;find pattern matching&lt;br/&gt;routing.yaml&#x27;s configured provider/model&quot;]
+    FindCurrent --&gt; FindBest{&quot;any candidate pattern with&lt;br/&gt;sample_size &gt;= min_sample_size (20)&lt;br/&gt;AND pass_rate &gt; current.pass_rate?&quot;}
+    FindBest --&gt;|&quot;no&quot;| Skip[&quot;no recommendation for this group&quot;]
+    FindBest --&gt;|&quot;yes&quot;| Best[&quot;pick candidate with max pass_rate&quot;]
+    Best --&gt; BuildRec[&quot;build OptimizationRecommendation&lt;br/&gt;(expected_cost_change, expected_quality_change,&lt;br/&gt;confidence=best.pass_rate, evidence JSON)&quot;]
+
+    BuildRec --&gt; WipeRecs[&quot;DELETE all optimization_recommendations&quot;]
+    WipeRecs --&gt; InsertRecs[&quot;INSERT new recommendations&quot;]
+    InsertRecs --&gt; RecsT[(&quot;optimization_recommendations&quot;)]
+
+    RecsT -.never read by.-x RoutingEngineNote[&quot;routing_engine.py&lt;br/&gt;(advisory only — human must bump&lt;br/&gt;routing.yaml policy_version to act on it)&quot;]</pre></div>
+<hr>
+<h2 id="13-decision-card-generation">13. Decision Card Generation</h2>
+<div class="diagram-wrap"><pre class="mermaid">flowchart TD
+    Req[&quot;GET /routing/decision/{request_id}&quot;] --&gt; DecisionsRouter[&quot;decisions.py&quot;]
+    DecisionsRouter --&gt; GetCard[&quot;decision_service.get_decision_card(db, request_id)&quot;]
+
+    GetCard --&gt; JoinQuery[&quot;SELECT Request, RoutingDecision, ExecutionResult&lt;br/&gt;JOIN ON request_id&lt;br/&gt;WHERE request_id = :id&quot;]
+    JoinQuery --&gt;|&quot;no row&quot;| NotFound[&quot;return None -&gt; 404&quot;]
+    JoinQuery --&gt;|&quot;row found&quot;| Unpack[&quot;request, decision, execution&quot;]
+
+    Unpack --&gt; RecLookup[&quot;_find_matching_recommendation():&lt;br/&gt;optimization_recommendations WHERE&lt;br/&gt;policy_version, task_type, task_subcategory,&lt;br/&gt;current_provider, current_model all match&quot;]
+
+    Unpack --&gt; Steps[&quot;_build_reasoning_steps(decision)&lt;br/&gt;deterministic, derived from stored columns:&lt;br/&gt;1. task classified as X&lt;br/&gt;2. confidence + initial tier&lt;br/&gt;3. escalated? or tier selected&lt;br/&gt;4. tier -&gt; provider/model under policy&lt;br/&gt;5. final routing complete&quot;]
+
+    RecLookup --&gt; CardBuild[&quot;assemble DecisionCard&quot;]
+    Steps --&gt; CardBuild
+    Unpack --&gt; CardBuild
+
+    CardBuild --&gt; Response2[&quot;DecisionDetailResponse&lt;br/&gt;{decision_card, recommendation | null}&quot;]
+    Response2 --&gt; DecisionsRouter --&gt; ClientResp[&quot;JSON to caller&quot;]
+
+    NoteBox[&quot;No LLM call, no write.&lt;br/&gt;Pure read + join + deterministic text generation.&quot;]
+    CardBuild -.-&gt; NoteBox</pre></div>
+<hr>
+<h2 id="14-agent-pipeline-routing-agent-investigate">14. Agent Pipeline (<code>routing_agent.investigate()</code>)</h2>
+<div class="diagram-wrap"><pre class="mermaid">flowchart TD
+    Trigger2[&quot;POST /agent/investigate&lt;br/&gt;(manual trigger, no LLM call anywhere in this module)&quot;] --&gt; LoadCfg[&quot;load routing.yaml:&lt;br/&gt;policy_version, min_sample_size&quot;]
+
+    LoadCfg --&gt; LoadPatterns[&quot;query routing_patterns&lt;br/&gt;WHERE policy_version = current&quot;]
+
+    LoadPatterns --&gt; F1[&quot;_find_degraded_task_types()&lt;br/&gt;pass_rate &lt; 0.70 AND sample_size &gt;= min_sample_size&lt;br/&gt;-&gt; risk=high&quot;]
+    LoadPatterns --&gt; F2[&quot;_find_expensive_task_type()&lt;br/&gt;max(average_cost) &gt; 1.5x other-types average&lt;br/&gt;-&gt; risk=medium&quot;]
+    LoadPatterns --&gt; F3[&quot;_detect_cost_anomaly()&lt;br/&gt;query requests+execution_results grouped by day;&lt;br/&gt;latest day cost/request &gt; 1.5x prior average&lt;br/&gt;-&gt; risk=medium&quot;]
+    LoadPatterns --&gt; F4[&quot;_compare_policy_versions()&lt;br/&gt;weighted avg cost/pass_rate per policy_version&lt;br/&gt;-&gt; risk=low&quot;]
+    LoadPatterns --&gt; F5[&quot;_validate_recommendations()&lt;br/&gt;re-query LIVE routing_decisions/execution_results/&lt;br/&gt;quality_results (not routing_patterns) for every&lt;br/&gt;pending optimization_recommendation;&lt;br/&gt;still holds? -&gt; risk=low : risk=medium&quot;]
+
+    F1 &amp; F2 &amp; F3 &amp; F4 &amp; F5 --&gt; Findings[&quot;findings: list[Finding]&lt;br/&gt;{category, summary, risk_level, confidence, evidence}&quot;]
+
+    Findings --&gt; SuggestActions[&quot;_build_suggested_actions()&lt;br/&gt;degraded model -&gt; &#x27;investigate before next policy review&#x27;&lt;br/&gt;trustworthy recommendation -&gt; &#x27;review and consider approving&#x27;&quot;]
+    Findings --&gt; OverallRisk[&quot;_overall_risk() = max risk across findings&quot;]
+    Findings --&gt; OverallConf[&quot;_overall_confidence() = mean confidence&quot;]
+    Findings --&gt; ExecSummary[&quot;_build_executive_summary()&lt;br/&gt;&#x27;{n} finding(s) ({breakdown}); overall risk: {risk}.&#x27;&quot;]
+
+    SuggestActions &amp; OverallRisk &amp; OverallConf &amp; ExecSummary --&gt; ReportBuild[&quot;InvestigationReport&lt;br/&gt;{report_id, policy_version, executive_summary,&lt;br/&gt;findings, suggested_actions, risk_level,&lt;br/&gt;confidence, investigation_steps, tools_used}&quot;]
+
+    ReportBuild --&gt; PersistReport[&quot;INSERT investigation_reports&quot;]
+    PersistReport --&gt; ReportsTable[(&quot;investigation_reports&quot;)]
+
+    ReportsTable -.read by.-&gt; AgentReportsEP[&quot;GET /agent/reports (list, paginated)&quot;]
+    ReportsTable -.read by.-&gt; AgentReportEP[&quot;GET /agent/report/{id}&quot;]
+
+    ConstraintNote[&quot;Writes ONLY to investigation_reports.&lt;br/&gt;Never touches routing.yaml, routing_decisions,&lt;br/&gt;routing_patterns, or optimization_recommendations.&quot;]
+    ReportBuild -.-&gt; ConstraintNote</pre></div>
+<hr>
+<h2 id="15-external-integrations">15. External Integrations</h2>
+<div class="diagram-wrap"><pre class="mermaid">flowchart LR
+    App[&quot;RoutingBridge backend&quot;]
+
+    App --&gt;|&quot;native SDK, API key from Settings.google_api_key&quot;| Google[&quot;Google Generative AI API&lt;br/&gt;(Gemini 2.5 Flash — BASIC tier)&quot;]
+    App --&gt;|&quot;REST, Bearer token from Settings.openrouter_api_key&quot;| OpenRouterExt[&quot;OpenRouter API&lt;br/&gt;(single gateway to:&lt;br/&gt;Mistral Small 3.2 — classifier + judge + STANDARD tier&lt;br/&gt;DeepSeek R1 — ADVANCED tier)&quot;]
+    App --&gt;|&quot;SQLAlchemy, DATABASE_URL&quot;| DBExt[(&quot;Postgres / Supabase&lt;br/&gt;(prod) or SQLite (local dev)&quot;)]
+    App -.reads at boot + per-request, no network.-&gt; ConfigFiles[&quot;config/routing.yaml&lt;br/&gt;config/pricing.yaml&lt;br/&gt;(local filesystem, not a config service)&quot;]
+    App -.reads once at boot, lru_cache.-&gt; EnvVars[&quot;.env / process environment&quot;]
+
+    Nginx3[&quot;nginx (deploy/nginx.conf.template)&quot;] --&gt; App
+    Nginx3 --&gt; StreamlitExt[&quot;Streamlit frontend (same container)&quot;]
+
+    RenderPlatform[&quot;Render.com&lt;br/&gt;(render.yaml: web service)&quot;] -.hosts.-&gt; Nginx3</pre></div>
+<p>No object storage, no vector DB, no message queue, no cache layer (Redis/etc.), and no external auth provider exist in this codebase — confirmed by the absence of any such client/import across <code>backend/</code> and <code>requirements.txt</code>.</p>
+<hr>
+<h2 id="16-end-to-end-master-flow">16. End-to-End Master Flow</h2>
+<div class="diagram-wrap"><pre class="mermaid">flowchart TB
+    User3[&quot;User&quot;] --&gt; FE3[&quot;Streamlit Frontend&quot;]
+    FE3 --&gt;|&quot;HTTP via nginx&quot;| FastAPI3[&quot;FastAPI (main.py)&quot;]
+    FastAPI3 --&gt; ChatEndpoint[&quot;POST /chat&quot;]
+
+    ChatEndpoint --&gt; Classify2[&quot;Classification&lt;br/&gt;(OpenRouter LLM, fallback: word-count heuristic)&quot;]
+    Classify2 --&gt; RoutingLogic[&quot;Routing Engine&lt;br/&gt;(tier selection + confidence escalation via routing.yaml)&quot;]
+    RoutingLogic --&gt; ProviderLayer2[&quot;Provider Layer&lt;br/&gt;(GeminiProvider / OpenRouterProvider)&quot;]
+    ProviderLayer2 --&gt; LLMCall[&quot;External LLM&lt;br/&gt;(Gemini / Mistral / DeepSeek)&quot;]
+    LLMCall --&gt; BizLogic[&quot;Business Logic&lt;br/&gt;(cost_estimator + quality_verifier)&quot;]
+    BizLogic --&gt; Persistence[&quot;Persistence&lt;br/&gt;(decision_service.record() — 1 transaction,&lt;br/&gt;4 normalized tables)&quot;]
+    Persistence --&gt; DB2[(&quot;Postgres/Supabase&quot;)]
+
+    DB2 --&gt; Analytics2[&quot;Analytics&lt;br/&gt;(GET /stats, /analytics/routing,&lt;br/&gt;/history — read-only aggregation)&quot;]
+    DB2 --&gt;|&quot;manual POST /analytics/refresh&quot;| Learning2[&quot;Learning&lt;br/&gt;(routing_learning.py:&lt;br/&gt;routing_patterns + optimization_recommendations)&quot;]
+    DB2 --&gt; DecisionCard2[&quot;Decision Card&lt;br/&gt;(GET /routing/decision/{id}:&lt;br/&gt;join + deterministic reasoning steps)&quot;]
+    Learning2 --&gt; DB2
+    DB2 --&gt;|&quot;manual POST /agent/investigate&quot;| AgentPipeline[&quot;Agent&lt;br/&gt;(routing_agent.py: 5 deterministic checks&lt;br/&gt;-&gt; InvestigationReport)&quot;]
+    AgentPipeline --&gt; DB2
+
+    Analytics2 --&gt; FE3
+    DecisionCard2 --&gt; FE3
+    AgentPipeline --&gt;|&quot;GET /agent/reports&quot;| FE3
+    Persistence --&gt; ChatEndpoint --&gt; FastAPI3 --&gt; FE3 --&gt; User3
+
+    ConfigLayer2[&quot;Configuration&lt;br/&gt;(routing.yaml, pricing.yaml, .env)&quot;] -.governs.-&gt; Classify2
+    ConfigLayer2 -.governs.-&gt; RoutingLogic
+    ConfigLayer2 -.governs.-&gt; ProviderLayer2
+    ConfigLayer2 -.governs.-&gt; BizLogic
+    ConfigLayer2 -.governs.-&gt; Learning2
+    ConfigLayer2 -.governs.-&gt; AgentPipeline
+    ConfigLayer2 -.validated at boot by.-&gt; StartupGate[&quot;startup_validation.py&lt;br/&gt;(fails app boot on bad config)&quot;]</pre></div>
+<hr>
+<h2 id="appendix-things-this-document-deliberately-does-not-show">Appendix: things this document deliberately does NOT show</h2>
+<p>Because they don't exist in the code (verified by reading every file, not inferred):</p>
+<ul><li>PDF/document ingestion, chunking, embeddings, or a vector database</li><li>A message queue, background job worker, or cron/scheduler (refresh and investigate are both synchronous, manually-triggered HTTP endpoints)</li><li>A cache layer (Redis, in-memory TTL cache, etc.) — only <code>functools.lru_cache</code> on singleton service instances</li><li>User authentication/authorization — every endpoint is unauthenticated</li><li>Multi-tenancy — there is exactly one routing policy active at a time, globally</li></ul>
+  </main>
+</div>
