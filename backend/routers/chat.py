@@ -41,6 +41,19 @@ logger = logging.getLogger(__name__)
 router = APIRouter()
 
 
+def _build_generation_prompt(prompt: str, tier: RoutingTier) -> str:
+    if tier != RoutingTier.ADVANCED:
+        return prompt
+
+    # ponytail: one model call, no autonomous tool loop; add tools only when a real use case needs them
+    return (
+        "Act as a lightweight agent. Keep the work to three short stages: "
+        "Plan, Final answer, Self-check. Show a concise plan, answer the user, "
+        "then check the answer for missing requirements or obvious errors.\n\n"
+        f"User request:\n{prompt}"
+    )
+
+
 @router.post("/chat", response_model=ChatResponse)
 def chat(
     body: ChatRequest,
@@ -60,7 +73,9 @@ def chat(
     try:
         provider = get_provider(routing_result.provider, settings)
         provider_response = provider.generate(
-            prompt, routing_result.model, max_tokens=routing_result.max_output_tokens
+            _build_generation_prompt(prompt, routing_result.tier),
+            routing_result.model,
+            max_tokens=routing_result.max_output_tokens,
         )
     except Exception as exc:
         logger.error(
