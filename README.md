@@ -1,6 +1,6 @@
 <div align="center">
 
-# RoutingBridge
+# Raut IQ
 
 ### An explainable, self-auditing multi-LLM routing platform.
 
@@ -8,9 +8,9 @@
 
 [![Python](https://img.shields.io/badge/python-3.11%2B-blue)](requirements.txt)
 [![License](https://img.shields.io/badge/license-MIT-green)](#license)
-[![Tests](https://img.shields.io/badge/tests-57%20passing-brightgreen)](#testing)
+[![Tests](https://img.shields.io/badge/tests-offline-brightgreen)](#testing)
 
-[Live demo](https://routeiq-5rgn.onrender.com)
+[Live demo](https://d3g44g7pjidyad.cloudfront.net)
 
 [Overview](#overview) • [Architecture](#architecture) • [Features](#features) • [API](#api-overview) • [Running locally](#running-locally) • [Deployment](#deployment) • [Design decisions](#design-decisions) • [Roadmap](#future-roadmap)
 
@@ -24,7 +24,7 @@ Every AI chatbot call costs money, and most apps send every question — easy
 or hard — to the same model. That's like paying a specialist's rate for
 every question, even "what time is it?"
 
-RoutingBridge reads each question first, sends the easy ones to a cheap
+Raut IQ reads each question first, sends the easy ones to a cheap
 model and the hard ones to a stronger one, and keeps a record of every
 choice it made and why. It also reviews its own history over time and
 suggests improvements — but never applies one without a person signing
@@ -52,11 +52,12 @@ came from a particular model, no way to tell if routing decisions are
 actually any good over time, and no mechanism to improve them beyond
 manually re-reading logs.
 
-### What RouteIQ does about it
+### What Raut IQ does about it
 
-1. **Routes intelligently** — a cheap classifier judges each prompt's
-   difficulty and hands it to the cheapest model that can do it justice,
-   escalating automatically when its own confidence is low.
+1. **Routes locally first** — BGE-small-en-v1.5 embeds the prompt and a
+   persisted logistic regression predicts BASIC, STANDARD, or ADVANCED.
+   Invalid, failed, or sub-threshold local results use a structured Mistral
+   fallback. If both fail, the request returns an audited error—never a guess.
 2. **Explains every decision** — every routed request produces a
    `DecisionCard`: which tier, which provider/model, why, and whether a
    better alternative has been observed historically.
@@ -74,14 +75,15 @@ manually re-reading logs.
 
 ## Architecture
 
-Full diagrams (request lifecycle, routing flow, decision flow, analytics
-flow, learning flow, agent flow) live in **[`docs/architecture.md`](docs/architecture.md)**.
-The short version:
+The request path is intentionally small:
 
 ```mermaid
 flowchart TD
-    A[Prompt] --> B[Classifier]
-    B --> C[Routing Engine]
+    A[Prompt] --> B[BGE-small-en-v1.5]
+    B --> B2[Logistic regression]
+    B2 -->|valid and trusted| C[Routing Engine]
+    B2 -->|failure or uncertainty| M[Mistral structured fallback]
+    M --> C
     C --> D[Provider]
     D --> E[Cost Estimator]
     E --> F[Quality Verifier]
@@ -101,13 +103,20 @@ made, except a human editing `routing.yaml`.** See
 
 ## Features
 
-- **Cuts model spend automatically** — simple prompts go to a fast,
-  cheap model; hard prompts escalate to a stronger one, with the
-  escalation reason attached to the response.
-- **LLM-judged difficulty, not keyword rules** — a lightweight
-  classifier returns a structured verdict (tier, task type, reasoning
-  level, confidence), with a heuristic fallback if the classifier call
-  itself fails.
+- **Low-cost primary classification** — the normal local route has zero
+  external classifier API charge; its CPU/memory infrastructure cost is
+  measured separately and is not described as free.
+- **Controlled semantic fallback** — Mistral via OpenRouter is called only
+  when the local router is unavailable, invalid, fails inference, or falls
+  below the explicit experimental threshold. There is no runtime heuristic.
+- **Evidence-first routing evaluation** — review provenance, family-safe
+  splits, routing-risk metrics, and calibration diagnostics stay unavailable
+  rather than inventing results when reviewed predictions do not exist.
+- **Cost-aware candidate selection** — each tier can define eligible
+  candidates with quality, cost, latency, and health policy values; the
+  cheapest healthy candidate that clears the quality floor wins.
+- **Safe provider fallback** — timeouts, 429s, and server errors can move
+  to the next candidate; authentication and malformed requests do not retry.
 - **Explainable by construction** — `GET /routing/decision/{id}`
   returns a deterministic, reproducible `DecisionCard`: reasoning steps,
   candidate models, and whether a learned recommendation applies.
@@ -129,26 +138,9 @@ made, except a human editing `routing.yaml`.** See
   and learning thresholds, live in `config/routing.yaml`; no redeploy to
   change routing behavior.
 
-## Screenshots
-
-**Chat** — routes a prompt, shows the routing decision, cost/latency, and quality verdict:
-
-![Chat](docs/screenshots/chat.png)
-
-**History** — every routed request, searchable and filterable by tier:
-
-![History](docs/screenshots/history.png)
-
-**Analytics** — aggregate cost, savings, latency, and quality metrics:
-
-![Analytics](docs/screenshots/analytics.png)
-
-**Settings** — the active routing configuration, read-only:
-
-![Settings](docs/screenshots/settings.png)
-
-(Analytics/decision/agent *endpoints* are richer than what the UI currently
-surfaces — see [Roadmap](#future-roadmap).)
+The Streamlit UI includes chat, request history, analytics, and read-only
+routing settings. The API also exposes the decision, learning, benchmark,
+and investigation data directly.
 
 ## API overview
 
@@ -160,6 +152,7 @@ surfaces — see [Roadmap](#future-roadmap).)
 | `/models` | GET | Current routing.yaml/pricing.yaml configuration |
 | `/analytics/refresh` | POST | Recompute `routing_patterns` + `optimization_recommendations` |
 | `/analytics/routing` | GET | Provider/model/task-type performance, tier distribution, daily trend |
+| `/analytics/benchmark` | GET | Stored routing evidence, calibration status, and strategy availability |
 | `/analytics/patterns` | GET | Learned routing patterns |
 | `/analytics/recommendations` | GET | Advisory optimization recommendations |
 | `/routing/decision/{request_id}` | GET | `DecisionCard` + matching recommendation for one past request |
@@ -182,8 +175,9 @@ backend/
   routers/                 # thin: validate → call service → return
   schemas/                 # Pydantic request/response contracts
   services/
-    classifier_service.py   # LLM-based routing classifier (+ heuristic fallback)
-    routing_engine.py        # tier → provider/model, confidence escalation
+    local_semantic_router.py # local BGE embeddings + persisted classifier
+    classifier_service.py   # local primary → validated Mistral fallback
+    routing_engine.py        # deterministic tier → configured provider/model
     quality_verifier.py      # LLM judge for BASIC/STANDARD answers
     decision_service.py       # transactional persistence + DecisionCard reads
     history_service.py / stats_service.py / analytics_service.py  # read-side queries
@@ -196,7 +190,10 @@ config/
   routing.yaml              # tiers, thresholds, learning config, policy_version
   pricing.yaml               # per-model token pricing
 scripts/
-  bootstrap_db.py            # explicit table creation + routing_policies seed (not on app startup)
+  generate_routing_dataset.py # provenance-aware, family-split dataset
+  train_local_router.py       # TRAIN-only artifact + checksum metadata
+  evaluate_local_router.py    # untouched TEST evaluation
+  bootstrap_db.py             # tables, metadata migration, policy seed
 frontend/
   streamlit_app.py            # chat / history / stats UI
 deploy/
@@ -204,10 +201,7 @@ deploy/
   nginx.conf.template          # /api/* -> FastAPI, /* -> Streamlit
 Dockerfile                    # single image for local Docker and Render
 render.yaml                    # Render Blueprint: one web service
-tests/                       # 57 tests, no network calls required
-docs/
-  architecture.md             # diagrams + data model, current state
-  pr1-4 *.md                   # per-PR design rationale, written as each was built
+tests/                       # offline unit/API/failure/release-gate tests
 ```
 
 ## Running locally
@@ -281,13 +275,13 @@ docker compose up --build
 ```
 
 One container, one port (`:8080`) — nginx proxies `/api/*` to FastAPI
-and everything else to Streamlit, the same image `render.yaml` deploys.
+and everything else to Streamlit.
 
 ## Deployment
 
-Runs as a **single Render Web Service** (one container, one Dockerfile)
-rather than separate frontend/backend services, so nothing sleeps
-waiting on a sibling service to wake up on Render's free tier.
+Production runs as one ARM64 Docker container on Amazon EC2. CloudFront
+is the public HTTPS entry point; the instance pulls the private image from
+ECR and reads provider/database settings from SSM Parameter Store.
 
 ```mermaid
 flowchart LR
@@ -296,8 +290,8 @@ flowchart LR
     N -->|"/*"| S["Streamlit<br/>127.0.0.1:8501"]
 ```
 
-See `Dockerfile`, `deploy/start.sh`, `deploy/nginx.conf.template`, and
-`render.yaml` for the exact wiring.
+See `Dockerfile`, `deploy/start.sh`, `deploy/nginx.conf.template`,
+and `deploy/aws-user-data.sh` for the exact wiring.
 
 ## Testing
 
@@ -305,37 +299,53 @@ See `Dockerfile`, `deploy/start.sh`, `deploy/nginx.conf.template`, and
 pytest tests/ -v
 ```
 
-57 tests, all offline — provider calls are faked, so no API keys or
+The test suite is offline — provider calls are faked, so no API keys or
 network access needed. Covers transactional persistence, the learning
 and investigation pipelines, every endpoint's response contract, and
 failure paths (provider exceptions, missing config, startup validation).
 
 ## Failure handling & startup validation
 
-Full detail in `docs/architecture.md`. Short version:
 
 - Every request gets an audit record, including failures — a
   `failed_requests` row is written before any error response goes out.
 - Configuration is validated at startup (`validate_startup_config()`),
   not discovered mid-request — it fails fast with every problem listed
   at once.
-- The heuristic classifier fallback derives its confidence from the
-  configured threshold instead of a hardcoded value that used to
-  silently over-escalate.
+- Local and Mistral routing failures produce an audited HTTP 503. The
+  removed heuristic classifier is not imported anywhere in the runtime.
 
-## Production stabilization notes
+## Confidence Is Not Ground Truth
 
-A live pass against the real deployed Supabase database caught issues
-mocked tests couldn't: a dead-in-production classifier (a missing
-`response_format` param made every real call silently fall back to a
-heuristic), a Streamlit crash from a bad numpy/pyarrow pairing, a chat
-timeout too short for the slowest tier, and RLS disabled on every table.
-All fixed and re-verified live — full writeup in
-[`docs/production-stabilization.md`](docs/production-stabilization.md).
+The local classifier's confidence is its maximum logistic-regression class
+probability; Mistral confidence is its raw self-assessment. Neither is a
+validated probability of correctness. Pydantic proves the normalized decision
+shape and range; it does not prove the tier is correct. Empirical correctness requires
+comparison with genuinely human-reviewed labels. Calibrated confidence requires
+a calibration procedure fitted on validation data and checked on untouched test
+data. No such evidence exists yet, so the calibration model is `null` and the
+dashboard records the remaining validation limitation.
+
+## v2.1 Routing Validation
+
+```text
+Local implementation: PASS
+ARM64 Docker validation: PASS
+Routing evidence: INCOMPLETE — reviewed-label evidence is unavailable
+Release state: PRODUCTION (explicit owner override)
+Production routing policy: LOCAL PRIMARY → MISTRAL FALLBACK
+```
+
+The local candidate now passes `"What is the capital of France?" → BASIC`
+and the other blocking sanity prompts. Its untouched TEST result is 95.74%
+accuracy / 95.42% macro-F1 over unreviewed AI-generated labels, so it is
+experimental evidence, not a generalization or calibration claim. The owner
+explicitly activated production while human review, calibration, quality/cost
+ceilings, and a supported routing-risk threshold remain incomplete.
 
 ## Design decisions
 
-The short version of decisions explained at length in `docs/pr*.md`:
+The main design choices are:
 
 - **Normalized schema over one flat log table** — lets analytics/agent
   queries aggregate by any dimension (task type, provider, tier)
@@ -365,8 +375,8 @@ The short version of decisions explained at length in `docs/pr*.md`:
 
 ## Future roadmap
 
-- Wire the Streamlit UI to the analytics/decision/agent endpoints
-  (currently API-only).
+- Collect independently authored, human-reviewed prompts. Benchmark metadata
+  intentionally reports zero reviewed rows until that work actually happens.
 - Let the optimization agent cite specific `DecisionCard`s as concrete
   examples inside a finding, not just aggregate numbers.
 - A lighter-weight approval flow for `optimization_recommendations.status`.
