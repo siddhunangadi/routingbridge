@@ -91,7 +91,7 @@ def test_refresh_generates_recommendation_when_alternative_outperforms(db_sessio
         "load_routing_config",
         lambda: {
             "tiers": {"basic": {"provider": "google", "model": "gemini-2.5-flash"}},
-            "policy_version": "v1.0",
+                "policy_version": "v2.1",
             "learning": {"apply_recommendations": False, "min_sample_size": 2, "min_confidence": 0.8},
         },
     )
@@ -109,7 +109,7 @@ def test_refresh_generates_recommendation_when_alternative_outperforms(db_sessio
     assert rec.recommended_provider == "openrouter"
     assert rec.status == "pending"
     assert rec.expected_quality_change > 0
-    assert rec.policy_version == "v1.0"
+    assert rec.policy_version == "v2.1"
     assert rec.evidence["current"]["sample_size"] == 3
     assert rec.evidence["recommended"]["sample_size"] == 3
     assert rec.evidence["recommended"]["pass_rate"] == 1.0
@@ -123,7 +123,7 @@ def test_refresh_ignores_patterns_from_a_different_policy_version(db_session, mo
         routing_learning,
         "load_routing_config",
         lambda: {
-            "policy_version": "v2.0",  # active policy — no requests recorded under it yet
+                "policy_version": "v3.0",  # active policy — no requests recorded under it yet
             "tiers": {"basic": {"provider": "google", "model": "gemini-2.5-flash"}},
             "learning": {"apply_recommendations": False, "min_sample_size": 2, "min_confidence": 0.8},
         },
@@ -137,8 +137,8 @@ def test_refresh_ignores_patterns_from_a_different_policy_version(db_session, mo
     result = routing_learning.refresh(db_session)
 
     # patterns are still built (they're tagged with the policy_version each
-    # request actually ran under, "v1.0" from routing_policy_version), but
-    # since none match "v2.0", no recommendation should compare across them
+    # request actually ran under, "v2.1" from routing_policy_version), but
+    # since none match "v3.0", no recommendation should compare across them
     assert result.patterns_updated == 2
     assert result.recommendations_generated == 0
 
@@ -149,7 +149,7 @@ def test_refresh_generates_no_recommendation_below_min_sample_size(db_session, m
         "load_routing_config",
         lambda: {
             "tiers": {"basic": {"provider": "google", "model": "gemini-2.5-flash"}},
-            "policy_version": "v1.0",
+                "policy_version": "v2.1",
             "learning": {"apply_recommendations": False, "min_sample_size": 20, "min_confidence": 0.8},
         },
     )

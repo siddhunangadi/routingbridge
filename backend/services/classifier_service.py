@@ -1,25 +1,13 @@
-"""LLM-powered routing classifier.
+"""Local semantic routing with a validated Mistral fallback."""
 
-Uses a small, cheap model (configured in routing.yaml, default a Mistral
-model via OpenRouter) purely as a *router* — it never answers the user's
-prompt, only decides which routing tier should handle it. This mirrors a
-real production pattern: a cheap gating model in front of expensive ones.
-
-Falls back to `heuristic_classifier` if the LLM call fails or returns
-output that doesn't validate against `RoutingDecision`. The fallback
-is the exception path, not the primary one — see `classify()`.
-"""
-
-import json
 import logging
+import math
 import time
 from functools import lru_cache
 
-from pydantic import ValidationError
-
-from backend.schemas.routing_decision import RoutingDecision, RoutingDecisionOutcome
+from backend.schemas.routing_decision import ReasoningLevel, RoutingDecision, RoutingDecisionOutcome, RoutingTier
 from backend.services.cost_estimator import estimate_cost
-from backend.services.heuristic_classifier import classify_heuristically
+from backend.services.local_semantic_router import MODEL_ID, LocalSemanticRouter
 from backend.services.providers.factory import get_provider
 from backend.utils.config import Settings, get_settings
 from backend.utils.yaml_config import load_routing_config
@@ -27,13 +15,11 @@ from backend.utils.yaml_config import load_routing_config
 logger = logging.getLogger(__name__)
 
 
+class RoutingClassifierError(RuntimeError):
+    pass
+
+
 def strip_json_fence(text: str) -> str:
-    """Defensive belt-and-suspenders: `response_format="json_object"` is what
-    actually fixes structured output (verified against the real OpenRouter
-    API — Mistral otherwise wraps its reply in a ```json fence and breaks
-    json.loads() on every call), but this strips a fence anyway in case a
-    future routing.yaml model swap doesn't honor response_format reliably.
-    """
     stripped = text.strip()
     if stripped.startswith("```"):
         stripped = stripped.strip("`")
@@ -43,83 +29,111 @@ def strip_json_fence(text: str) -> str:
 
 
 def _build_classifier_prompt(user_prompt: str) -> str:
-    """Kept deliberately tiny: every extra token here is paid on every request."""
     return (
-        "You are a routing classifier for an LLM system. Decide which routing "
-        "tier the prompt below needs, and briefly describe it. Do not answer "
-        "the prompt yourself.\n\n"
-        "Respond with JSON only, matching exactly this shape:\n"
-        '{"routing_tier": "BASIC"|"STANDARD"|"ADVANCED", '
-        '"task_type": "<short label, e.g. Summarization, CodeGen, Q&A, Reasoning>", '
-        '"reasoning_level": "Low"|"Medium"|"High", '
-        '"confidence": <0-1 float>, '
-        '"reason": "<short reason, max 20 words>"}\n\n'
+        "Classify the prompt for model routing; do not answer it. "
+        "Confidence is your uncalibrated self-assessment, not a probability of correctness.\n"
+        "Return JSON only: "
+        '{"routing_tier":"BASIC|STANDARD|ADVANCED","task_type":"short label",'
+        '"reasoning_level":"Low|Medium|High","confidence":0.0,"reason":"max 20 words"}\n'
         f'Prompt: """{user_prompt}"""'
     )
 
 
 class ClassifierService:
-    """Routes prompts to a cheap LLM for complexity classification."""
-
-    def __init__(self, settings: Settings):
+    def __init__(self, settings: Settings, *, local_router=None, provider=None):
         self._settings = settings
-
-        routing_cfg = load_routing_config()["classifier"]
-        self._provider_name: str = routing_cfg["provider"]
-        self._model_name: str = routing_cfg["model"]
-        self._max_output_tokens: int = routing_cfg["max_output_tokens"]
-
-        api_key = getattr(settings, f"{self._provider_name}_api_key", "")
-        self._client_ready = bool(api_key)
-        if self._client_ready:
+        config = load_routing_config()["classifier"]
+        self._provider_name = config["provider"]
+        self._model_name = config["model"]
+        self._max_output_tokens = config["max_output_tokens"]
+        self._provider = provider
+        self._local_router = local_router
+        self._local_initialized = local_router is not None
+        self._local_error = None
+        if self._provider is None and getattr(settings, f"{self._provider_name}_api_key", ""):
             self._provider = get_provider(self._provider_name, settings)
 
-    def classify(self, prompt: str) -> RoutingDecisionOutcome:
-        """Make a routing decision for a prompt, falling back to heuristics on any LLM failure."""
-        start = time.perf_counter()
-        input_tokens = output_tokens = 0
-        fallback_used = False
+    def _get_local_router(self):
+        if not self._local_initialized:
+            self._local_initialized = True
+            try:
+                self._local_router = LocalSemanticRouter.from_artifact(
+                    self._settings.local_router_artifact_dir, self._settings.bge_cache_dir,
+                )
+            except Exception as exc:
+                self._local_error = exc
+        if self._local_router is None:
+            raise RuntimeError(f"local router unavailable: {self._local_error}")
+        return self._local_router
 
-        try:
-            if not self._client_ready:
-                raise RuntimeError(f"{self._provider_name}_api_key not configured")
-            decision, input_tokens, output_tokens = self._classify_with_llm(prompt)
-        except (Exception,) as exc:  # noqa: BLE001 - any failure here must degrade, not crash
-            logger.warning("Classifier LLM call failed (%s); using heuristic fallback", exc)
-            decision = classify_heuristically(prompt, self._settings)
-            fallback_used = True
-
-        latency_ms = (time.perf_counter() - start) * 1000
-        cost = 0.0 if fallback_used else estimate_cost(self._model_name, input_tokens, output_tokens)
-
-        return RoutingDecisionOutcome(
-            decision=decision,
-            classifier_model=self._model_name if not fallback_used else "heuristic",
-            latency_ms=round(latency_ms, 2),
-            input_tokens=input_tokens,
-            output_tokens=output_tokens,
-            cost=cost,
-            fallback_used=fallback_used,
-        )
-
-    def _classify_with_llm(self, prompt: str) -> tuple[RoutingDecision, int, int]:
+    def _classify_with_llm(self, prompt: str, started: float, fallback_reason: str | None, local_result=None) -> RoutingDecisionOutcome:
+        if self._provider is None:
+            raise RuntimeError(f"{self._provider_name}_api_key not configured")
         response = self._provider.generate(
-            _build_classifier_prompt(prompt),
-            self._model_name,
-            self._max_output_tokens,
-            response_format="json_object",
+            _build_classifier_prompt(prompt), self._model_name,
+            self._max_output_tokens, response_format="json_object",
+        )
+        decision = RoutingDecision.model_validate_json(strip_json_fence(response.text))
+        return RoutingDecisionOutcome(
+            decision=decision, classifier_model=self._model_name,
+            latency_ms=round((time.perf_counter() - started) * 1000, 2),
+            input_tokens=response.input_tokens, output_tokens=response.output_tokens,
+            cost=estimate_cost(self._model_name, response.input_tokens, response.output_tokens),
+            fallback_used=fallback_reason is not None, classifier_source="llm_fallback",
+            fallback_reason=fallback_reason,
+            p_basic=local_result.p_basic if local_result else None,
+            p_standard=local_result.p_standard if local_result else None,
+            p_advanced=local_result.p_advanced if local_result else None,
         )
 
-        try:
-            data = json.loads(strip_json_fence(response.text))
-            decision = RoutingDecision.model_validate(data)
-        except (json.JSONDecodeError, ValidationError) as exc:
-            raise ValueError(f"Classifier returned invalid structured output: {exc}") from exc
+    def classify(self, prompt: str) -> RoutingDecisionOutcome:
+        started = time.perf_counter()
+        local_error = None
+        local_result = None
+        if self._settings.router_mode in {"local", "validation"}:
+            try:
+                local_result = self._get_local_router().classify(prompt)
+                if not math.isfinite(local_result.raw_confidence) or not 0 <= local_result.raw_confidence <= 1:
+                    raise ValueError("local router returned unusable confidence")
+                if local_result.raw_confidence < self._settings.local_router_fallback_threshold:
+                    raise ValueError(
+                        f"raw confidence {local_result.raw_confidence:.4f} below experimental threshold "
+                        f"{self._settings.local_router_fallback_threshold:.4f}"
+                    )
+                reasoning = {
+                    RoutingTier.BASIC: ReasoningLevel.LOW,
+                    RoutingTier.STANDARD: ReasoningLevel.MEDIUM,
+                    RoutingTier.ADVANCED: ReasoningLevel.HIGH,
+                }[local_result.routing_tier]
+                return RoutingDecisionOutcome(
+                    decision=RoutingDecision(
+                        routing_tier=local_result.routing_tier, task_type="local_semantic",
+                        reasoning_level=reasoning, confidence=local_result.raw_confidence,
+                        reason="BGE embedding classified by local logistic regression",
+                    ),
+                    classifier_model=MODEL_ID, latency_ms=round((time.perf_counter() - started) * 1000, 2),
+                    input_tokens=0, output_tokens=0, cost=0.0, fallback_used=False,
+                    classifier_source="local_semantic", p_basic=local_result.p_basic,
+                    p_standard=local_result.p_standard, p_advanced=local_result.p_advanced,
+                )
+            except Exception as exc:
+                local_error = str(exc)
+                if local_result is not None:
+                    probabilities = [local_result.p_basic, local_result.p_standard, local_result.p_advanced]
+                    usable = all(math.isfinite(value) and 0 <= value <= 1 for value in probabilities)
+                    if not usable or not math.isclose(sum(probabilities), 1.0):
+                        local_result = None
+                logger.warning("Local router failed; using Mistral fallback: %s", exc)
 
-        return decision, response.input_tokens, response.output_tokens
+        try:
+            return self._classify_with_llm(prompt, started, local_error, local_result)
+        except Exception as exc:
+            message = f"Mistral routing fallback failed: {exc}"
+            if local_error is not None:
+                message = f"Local router failed ({local_error}); {message}"
+            raise RoutingClassifierError(message) from exc
 
 
 @lru_cache
 def get_classifier_service() -> ClassifierService:
-    """FastAPI dependency: one classifier instance per process, same pattern as get_settings()."""
     return ClassifierService(get_settings())

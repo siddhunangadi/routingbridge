@@ -19,7 +19,7 @@ from backend.services import investigation_service, routing_agent, routing_learn
 from backend.services.decision_service import record
 
 _LOWERED_THRESHOLD_CONFIG = {
-    "policy_version": "v1.0",
+    "policy_version": "v2.1",
     "tiers": {"basic": {"provider": "google", "model": "gemini-2.5-flash"}},
     "learning": {"apply_recommendations": False, "min_sample_size": 2, "min_confidence": 0.8},
 }

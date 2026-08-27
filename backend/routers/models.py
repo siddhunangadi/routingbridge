@@ -10,6 +10,7 @@ configured" — real complexity with no corresponding benefit here.
 
 from fastapi import APIRouter
 
+from backend.utils.config import get_settings
 from backend.utils.yaml_config import load_pricing_config, load_routing_config
 
 router = APIRouter()
@@ -17,6 +18,7 @@ router = APIRouter()
 
 @router.get("/models")
 def get_models() -> dict:
+    settings = get_settings()
     routing_cfg = load_routing_config()
     pricing_cfg = load_pricing_config()["models"]
 
@@ -33,6 +35,13 @@ def get_models() -> dict:
         }
 
     return {
+        "policy_version": routing_cfg["policy_version"],
+        "production_policy": routing_cfg.get("router", {}).get("production_policy", "unknown"),
+        "router_mode": settings.router_mode,
+        "primary_classifier": "local_semantic" if settings.router_mode in {"local", "validation"} else "llm_fallback",
+        "fallback_classifier": "llm_fallback",
+        "local_fallback_threshold": settings.local_router_fallback_threshold,
+        "local_confidence_status": "uncalibrated_experimental_signal",
         "classifier": routing_cfg["classifier"],
         "confidence_thresholds": routing_cfg["confidence_thresholds"],
         "tiers": tiers,

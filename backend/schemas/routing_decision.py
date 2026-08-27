@@ -15,6 +15,7 @@ Two layers on purpose:
 """
 
 from enum import Enum
+from typing import Literal
 
 from pydantic import BaseModel, Field
 
@@ -58,3 +59,9 @@ class RoutingDecisionOutcome(BaseModel):
     output_tokens: int
     cost: float
     fallback_used: bool
+    calibrated_confidence: float | None = Field(default=None, ge=0.0, le=1.0)
+    classifier_source: Literal["local_semantic", "llm_fallback"] = "llm_fallback"
+    fallback_reason: str | None = None
+    p_basic: float | None = Field(default=None, ge=0.0, le=1.0)
+    p_standard: float | None = Field(default=None, ge=0.0, le=1.0)
+    p_advanced: float | None = Field(default=None, ge=0.0, le=1.0)

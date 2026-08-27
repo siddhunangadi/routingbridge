@@ -9,52 +9,44 @@ ADVANCED is a one-line YAML edit; this file never changes.
 
 from functools import lru_cache
 
-from backend.schemas.routing import RoutingResult
+from backend.schemas.routing import RoutingCandidate, RoutingResult
 from backend.schemas.routing_decision import RoutingDecision, RoutingTier
 from backend.utils.yaml_config import load_routing_config
-
-_TIER_ORDER = [RoutingTier.BASIC, RoutingTier.STANDARD, RoutingTier.ADVANCED]
-
-
-def _next_tier(tier: RoutingTier) -> RoutingTier | None:
-    idx = _TIER_ORDER.index(tier)
-    return _TIER_ORDER[idx + 1] if idx + 1 < len(_TIER_ORDER) else None
-
 
 class RoutingEngine:
     def __init__(self):
         self._config = load_routing_config()
 
     def select(self, decision: RoutingDecision) -> RoutingResult:
-        """Pick a provider/model for a routing decision, escalating one tier
-        up if the classifier's confidence was too low to trust its own call.
-        """
+        """Deterministically map the classifier's final tier to configured models."""
         tier = decision.routing_tier
-        escalated = False
-
-        thresholds = self._config["confidence_thresholds"]
-        if thresholds["escalate_on_low_confidence"] and decision.confidence < thresholds["low"]:
-            candidate = _next_tier(tier)
-            if candidate is not None:
-                tier = candidate
-                escalated = True
 
         tier_config = self._config["tiers"][tier.value.lower()]
+        candidate_configs = tier_config.get("candidates") or [tier_config]
+        minimum_quality = tier_config.get("minimum_quality", 0.0)
+        eligible = [
+            candidate
+            for candidate in candidate_configs
+            if candidate.get("healthy", True)
+            and candidate.get("expected_quality", 1.0) >= minimum_quality
+        ]
+        if not eligible:
+            eligible = [candidate_configs[0]]
+        eligible.sort(key=lambda candidate: (candidate.get("expected_cost", 0.0), candidate.get("expected_latency_ms", 0)))
+        candidates = [RoutingCandidate(**candidate) for candidate in eligible]
+        selected = candidates[0]
         reasons = list(tier_config["reasons"])
-        if escalated:
-            reasons.append(
-                f"Escalated from {decision.routing_tier.value} due to low "
-                f"classifier confidence ({decision.confidence:.2f})"
-            )
-
+        if len(candidates) > 1:
+            reasons.append("Lowest-cost healthy candidate meeting the quality policy")
         return RoutingResult(
-            provider=tier_config["provider"],
-            model=tier_config["model"],
-            max_output_tokens=tier_config["max_output_tokens"],
+            provider=selected.provider,
+            model=selected.model,
+            max_output_tokens=selected.max_output_tokens,
             tier=tier,
             original_tier=decision.routing_tier,
-            escalated=escalated,
+            escalated=False,
             reasons=reasons,
+            candidates=candidates,
         )
 
 

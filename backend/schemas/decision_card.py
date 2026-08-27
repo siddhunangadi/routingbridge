@@ -47,6 +47,7 @@ class DecisionCard(BaseModel):
     selected_provider: str
     selected_model: str
     selected_tier: str
+    classifier_source: str
     routing_reason: list[str]
     estimated_cost: float
     estimated_latency_ms: float

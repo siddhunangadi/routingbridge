@@ -10,11 +10,16 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
 WORKDIR /app
 
 COPY requirements.txt .
-RUN pip install --no-cache-dir -r requirements.txt
+RUN pip install --retries 5 --timeout 120 --no-cache-dir $(awk '/^(fastapi|uvicorn|pydantic|pydantic-settings|sqlalchemy|httpx|python-dotenv|pyyaml|google-generativeai|psycopg)/ {print $1}' requirements.txt)
+RUN pip install --retries 5 --timeout 120 --no-cache-dir $(awk '/^(streamlit|plotly|pandas|numpy|pyarrow)/ {print $1}' requirements.txt)
+RUN pip install --retries 5 --timeout 120 --no-cache-dir $(awk '/^(scikit-learn|torch|transformers|sentence-transformers)/ {print $1}' requirements.txt)
 
 COPY backend/ backend/
 COPY frontend/ frontend/
+COPY scripts/ scripts/
+COPY data/ data/
 COPY config/ config/
+COPY artifacts/ artifacts/
 COPY .streamlit/ .streamlit/
 COPY deploy/nginx.conf.template /etc/nginx/nginx.conf.template
 COPY deploy/start.sh /app/start.sh

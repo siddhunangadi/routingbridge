@@ -5,8 +5,7 @@ Covers the four scenarios called out for this hardening pass:
   exception) never leaves the request unaudited
 - a model missing a pricing.yaml entry is caught, not a bare 500 with no
   audit trail
-- the heuristic classifier fallback no longer forces an unwanted
-  escalation (the confidence-vs-threshold bug fixed in this pass)
+- both routing classifiers failing returns an audited controlled error
 - startup configuration validation catches bad routing.yaml/pricing.yaml
   before the app serves traffic
 
@@ -32,11 +31,9 @@ from backend.schemas.routing_decision import (
     RoutingDecisionOutcome,
     RoutingTier,
 )
-from backend.services.classifier_service import get_classifier_service
-from backend.services.heuristic_classifier import classify_heuristically
+from backend.services.classifier_service import RoutingClassifierError, get_classifier_service
 from backend.services.providers.base import ProviderResponse
 from backend.services.quality_verifier import get_quality_verifier
-from backend.utils.config import Settings
 from backend.utils.startup_validation import StartupConfigError, validate_startup_config
 
 
@@ -151,8 +148,9 @@ def test_provider_exception_persists_failed_request(client_factory, exc):
     assert len(rows) == 1
     row = rows[0]
     assert row.stage == "provider_call"
-    assert row.provider == "google"
-    assert row.model == "gemini-2.5-flash"
+    expected_provider = "google" if isinstance(exc, (httpx.TimeoutException, httpx.ConnectError)) else "openrouter"
+    assert row.provider == expected_provider
+    assert row.model == ("gemini-2.5-flash" if expected_provider == "google" else "mistralai/mistral-small-3.2-24b-instruct")
     assert row.status == "failed"
     assert row.prompt == "what is 2+2"
     assert str(exc) in row.error_message
@@ -189,52 +187,32 @@ def test_missing_pricing_config_persists_failed_request(client_factory, monkeypa
         db.close()
     assert len(rows) == 1
     assert rows[0].stage == "cost_estimation"
-    assert rows[0].model == "gemini-2.5-flash"
+    assert rows[0].model == "mistralai/mistral-small-3.2-24b-instruct"
 
 
 # ---------------------------------------------------------------------------
-# 3. Classifier fallback / heuristic confidence bug fix
+# 3. Both routing classifiers fail
 # ---------------------------------------------------------------------------
 
 
-def test_heuristic_fallback_confidence_does_not_force_escalation():
-    """Regression test for the bug found in this hardening pass: a fixed
-    confidence of 0.5 sat below routing.yaml's default `low` threshold
-    (0.6), so routing_engine.select() escalated every single fallback
-    decision past the tier the word count itself picked. The fallback's
-    confidence must now clear the configured `low` threshold.
-    """
-    from backend.utils.yaml_config import load_routing_config
+def test_both_routing_classifiers_fail_with_audited_503(client_factory):
+    class _BrokenClassifier:
+        def classify(self, _prompt):
+            raise RoutingClassifierError("local failed; Mistral failed")
 
-    settings = Settings(easy_max_words=30, medium_max_words=100)
-    decision = classify_heuristically("short prompt", settings)
+    client, session_factory = client_factory(_WorkingProvider())
+    app.dependency_overrides[get_classifier_service] = lambda: _BrokenClassifier()
 
-    low = load_routing_config()["confidence_thresholds"]["low"]
-    assert decision.confidence >= low
-    assert decision.routing_tier == RoutingTier.BASIC
+    response = client.post("/chat", json={"prompt": "what is 2+2"})
 
-
-def test_heuristic_fallback_still_below_high_confidence_threshold():
-    from backend.utils.yaml_config import load_routing_config
-
-    settings = Settings(easy_max_words=30, medium_max_words=100)
-    decision = classify_heuristically("short prompt", settings)
-
-    high = load_routing_config()["confidence_thresholds"]["high"]
-    assert decision.confidence < high
-
-
-def test_classifier_falls_back_to_heuristic_on_provider_exception():
-    from backend.services.classifier_service import ClassifierService
-
-    settings = Settings(google_api_key="", openrouter_api_key="")  # no client ready -> forces fallback
-    service = ClassifierService(settings)
-
-    outcome = service.classify("what is 2+2")
-
-    assert outcome.fallback_used is True
-    assert outcome.classifier_model == "heuristic"
-    assert outcome.cost == 0.0
+    assert response.status_code == 503
+    db = session_factory()
+    try:
+        row = db.query(FailedRequest).one()
+    finally:
+        db.close()
+    assert row.stage == "routing_classifier"
+    assert "local failed; Mistral failed" in row.error_message
 
 
 # ---------------------------------------------------------------------------
@@ -273,6 +251,26 @@ def test_startup_validation_fails_on_model_missing_pricing(monkeypatch):
     monkeypatch.setattr(startup_validation, "load_pricing_config", lambda: {"models": {}})
 
     with pytest.raises(StartupConfigError, match="no pricing.yaml entry"):
+        validate_startup_config()
+
+
+def test_startup_validation_checks_fallback_candidates(monkeypatch):
+    bad_config = {
+        **_VALID_ROUTING_CONFIG,
+        "tiers": {
+            **_VALID_ROUTING_CONFIG["tiers"],
+            "basic": {
+                **_VALID_ROUTING_CONFIG["tiers"]["basic"],
+                "candidates": [
+                    {"provider": "openrouter", "model": "missing", "max_output_tokens": 100}
+                ],
+            },
+        },
+    }
+    monkeypatch.setattr(startup_validation, "load_routing_config", lambda: bad_config)
+    monkeypatch.setattr(startup_validation, "load_pricing_config", lambda: _VALID_PRICING_CONFIG)
+
+    with pytest.raises(StartupConfigError, match="tiers.basic.candidates.0.model"):
         validate_startup_config()
 
 

@@ -14,8 +14,14 @@ from backend.schemas.analytics import (
     RoutingPatternResponse,
 )
 from backend.services import analytics_service, routing_learning
+from backend.services.routing_evaluation import benchmark
 
 router = APIRouter(prefix="/analytics")
+
+
+@router.get("/benchmark")
+def get_router_benchmark() -> dict[str, object]:
+    return benchmark()
 
 
 @router.post("/refresh", response_model=RefreshResult)

@@ -46,6 +46,13 @@ def validate_startup_config() -> None:
         _check_provider_and_model(errors, f"tiers.{tier}", tier_cfg.get("provider"), tier_cfg.get("model"), priced_models)
         if not isinstance(tier_cfg.get("max_output_tokens"), int) or tier_cfg.get("max_output_tokens", 0) <= 0:
             errors.append(f"tiers.{tier}.max_output_tokens must be a positive integer")
+        for index, candidate in enumerate(tier_cfg.get("candidates", [])):
+            label = f"tiers.{tier}.candidates.{index}"
+            _check_provider_and_model(
+                errors, label, candidate.get("provider"), candidate.get("model"), priced_models
+            )
+            if not isinstance(candidate.get("max_output_tokens"), int) or candidate.get("max_output_tokens", 0) <= 0:
+                errors.append(f"{label}.max_output_tokens must be a positive integer")
 
     thresholds = (routing_cfg or {}).get("confidence_thresholds", {}) or {}
     low, high = thresholds.get("low"), thresholds.get("high")

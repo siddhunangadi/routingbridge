@@ -16,6 +16,8 @@ Usage:
 
 import logging
 
+from sqlalchemy import inspect, text
+
 from backend.database.db import Base, SessionLocal, engine
 from backend.database.models import RoutingPolicy
 from backend.utils.logging_setup import configure_logging
@@ -23,9 +25,40 @@ from backend.utils.yaml_config import load_routing_config
 
 logger = logging.getLogger(__name__)
 
+ROUTING_METADATA_COLUMNS = {
+    "routing_decisions": {
+        "calibrated_confidence": "FLOAT",
+        "classifier_source": "VARCHAR DEFAULT 'legacy'",
+        "classifier_model": "VARCHAR DEFAULT 'unknown'",
+        "fallback_used": "BOOLEAN DEFAULT FALSE",
+        "fallback_reason": "VARCHAR",
+        "p_basic": "FLOAT",
+        "p_standard": "FLOAT",
+        "p_advanced": "FLOAT",
+        "classifier_latency_ms": "FLOAT DEFAULT 0",
+        "classifier_cost": "FLOAT DEFAULT 0",
+    },
+    "execution_results": {
+        "generation_cost": "FLOAT DEFAULT 0",
+        "generation_latency_ms": "FLOAT DEFAULT 0",
+    },
+}
+
+
+def add_routing_metadata_columns() -> None:
+    """Idempotent ALTERs for databases created before router-source tracking."""
+    inspector = inspect(engine)
+    with engine.begin() as connection:
+        for table, definitions in ROUTING_METADATA_COLUMNS.items():
+            existing = {column["name"] for column in inspector.get_columns(table)}
+            for name, definition in definitions.items():
+                if name not in existing:
+                    connection.execute(text(f"ALTER TABLE {table} ADD COLUMN {name} {definition}"))
+
 
 def bootstrap() -> None:
     Base.metadata.create_all(bind=engine)
+    add_routing_metadata_columns()
     logger.info("Tables created (or already present)")
 
     routing_cfg = load_routing_config()

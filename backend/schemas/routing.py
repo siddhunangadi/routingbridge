@@ -1,8 +1,14 @@
 """Output of the routing engine: which provider/model to call, and why."""
 
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 
 from backend.schemas.routing_decision import RoutingTier
+
+
+class RoutingCandidate(BaseModel):
+    provider: str
+    model: str
+    max_output_tokens: int
 
 
 class RoutingResult(BaseModel):
@@ -13,3 +19,4 @@ class RoutingResult(BaseModel):
     original_tier: RoutingTier
     escalated: bool
     reasons: list[str]
+    candidates: list[RoutingCandidate] = Field(default_factory=list)

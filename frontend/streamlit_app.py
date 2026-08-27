@@ -1,4 +1,4 @@
-"""RoutingBridge Streamlit UI.
+"""Raut IQ Streamlit UI.
 
 One file, sidebar radio for navigation between four pages. No multipage
 framework, no page-router abstraction — for four screens that each just
@@ -19,7 +19,7 @@ from theme import COLORS, inject_theme, kv_row, metric_tile, page_header, qualit
 
 BACKEND_URL = os.getenv("BACKEND_URL", "http://localhost:8000")
 
-st.set_page_config(page_title="RoutingBridge", page_icon=None, layout="wide")
+st.set_page_config(page_title="Raut IQ", page_icon=None, layout="wide")
 inject_theme()
 
 CHART_LAYOUT = dict(
@@ -156,19 +156,10 @@ def render_chat() -> None:
         left, right = st.columns([1, 1], gap="medium")
 
         with left:
-            escalation_note = ""
-            if data["escalated"]:
-                escalation_note = kv_row(
-                    "Escalated from", f"{data['original_tier']} (low confidence)"
-                )
             rows = "".join(
                 [
                     kv_row("Routing Tier", tier_badge(data["routing_tier"])),
-                    kv_row("Provider", data["provider"]),
                     kv_row("Model", data["model"]),
-                    kv_row("Task Type", data["task_type"]),
-                    kv_row("Confidence", f"{data['confidence']:.2f}"),
-                    escalation_note,
                 ]
             )
             st.markdown(
@@ -177,18 +168,14 @@ def render_chat() -> None:
             )
 
         with right:
-            fallback_note = " (heuristic fallback)" if data["fallback_used"] else ""
             rows = "".join(
                 [
                     kv_row("Total Cost", f"${data['total_cost']:.6f}"),
-                    kv_row("Model Cost", f"${data['model_cost']:.6f}"),
-                    kv_row("Classifier Cost", f"${data['classifier_cost']:.6f}"),
-                    kv_row("Latency", f"{data['total_latency_ms']:.0f} ms"),
-                    kv_row("Classifier", f"{data['classifier_model']}{fallback_note}"),
+                    kv_row("Response Time", f"{data['total_latency_ms']:.0f} ms"),
                 ]
             )
             st.markdown(
-                f'<div class="mp-card"><div class="mp-card-title">Cost & Latency</div>{rows}</div>',
+                f'<div class="mp-card"><div class="mp-card-title">Request Summary</div>{rows}</div>',
                 unsafe_allow_html=True,
             )
 
@@ -238,22 +225,18 @@ def render_history() -> None:
             "timestamp",
             "prompt",
             "routing_tier",
-            "provider",
             "model",
             "total_cost",
             "total_latency_ms",
-            "fallback_used",
         ]
     ].rename(
         columns={
             "timestamp": "Time",
             "prompt": "Prompt",
             "routing_tier": "Tier",
-            "provider": "Provider",
             "model": "Model",
             "total_cost": "Cost ($)",
-            "total_latency_ms": "Latency (ms)",
-            "fallback_used": "Fallback",
+            "total_latency_ms": "Response Time (ms)",
         }
     )
 
@@ -263,7 +246,7 @@ def render_history() -> None:
         hide_index=True,
         column_config={
             "Cost ($)": st.column_config.NumberColumn(format="$%.6f"),
-            "Latency (ms)": st.column_config.NumberColumn(format="%.0f"),
+            "Response Time (ms)": st.column_config.NumberColumn(format="%.0f"),
         },
     )
 
@@ -279,7 +262,7 @@ def _bar_chart(labels: list[str], values: list[float], color: str) -> go.Figure:
 
 
 def render_analytics() -> None:
-    page_header("Analytics", "How RoutingBridge is routing traffic and what it costs.")
+    page_header("Analytics", "How Raut IQ is routing traffic and what it costs.")
 
     stats = _request_with_retry("GET", "/stats")
     if stats is None:
@@ -294,12 +277,15 @@ def render_analytics() -> None:
     c3.markdown(
         metric_tile("Estimated Savings", f"${stats['estimated_savings']:.4f}"), unsafe_allow_html=True
     )
-    c4.markdown(metric_tile("Avg Latency", f"{stats['avg_latency_ms']:.0f} ms"), unsafe_allow_html=True)
+    c4.markdown(
+        metric_tile("Avg Response Time", f"{stats['avg_latency_ms']:.0f} ms"),
+        unsafe_allow_html=True,
+    )
     quality_label = (
         f"{stats['quality_pass_rate'] * 100:.0f}%" if stats["quality_pass_rate"] is not None else "—"
     )
     c5.markdown(
-        metric_tile(f"Quality Pass Rate ({stats['quality_verified_count']} checked)", quality_label),
+        metric_tile(f"Helpful Responses ({stats['quality_verified_count']} checked)", quality_label),
         unsafe_allow_html=True,
     )
 
@@ -326,56 +312,33 @@ def render_analytics() -> None:
 
 
 def render_settings() -> None:
-    page_header("Settings", "Current routing configuration — read-only.")
-    st.caption(
-        "Routing tiers and pricing are defined in config/routing.yaml and "
-        "config/pricing.yaml. Changing routing policy is a config edit, not "
-        "a runtime write, to avoid file-write race conditions for what is "
-        "otherwise a read-only view."
-    )
+    page_header("Settings", "See which AI model handles each type of request.")
 
     data = _request_with_retry("GET", "/models")
     if data is None:
         return
 
-    st.markdown("<br>", unsafe_allow_html=True)
-    classifier = data["classifier"]
-    thresholds = data["confidence_thresholds"]
-    rows = "".join(
-        [
-            kv_row("Classifier Provider", classifier["provider"]),
-            kv_row("Classifier Model", classifier["model"]),
-            kv_row("Max Output Tokens", str(classifier["max_output_tokens"])),
-            kv_row("High Confidence Threshold", f"{thresholds['high']:.2f}"),
-            kv_row("Low Confidence Threshold", f"{thresholds['low']:.2f}"),
-            kv_row("Escalate on Low Confidence", str(thresholds["escalate_on_low_confidence"])),
-        ]
-    )
-    st.markdown(
-        f'<div class="mp-card"><div class="mp-card-title">Classifier</div>{rows}</div>',
-        unsafe_allow_html=True,
-    )
-
-    st.markdown('<div class="mp-card-title" style="margin-top:24px;">Routing Tiers</div>', unsafe_allow_html=True)
+    st.markdown('<div class="mp-card-title">Routing Tiers</div>', unsafe_allow_html=True)
+    tier_details = {
+        "basic": ("Quick questions and simple tasks", "Lowest"),
+        "standard": ("Explanations, summaries and everyday work", "Balanced"),
+        "advanced": ("Complex planning and technical problems", "Highest"),
+    }
     cols = st.columns(3, gap="medium")
     for col, (tier_name, tier) in zip(cols, data["tiers"].items()):
+        best_for, cost_level = tier_details[tier_name]
         rows = "".join(
             [
-                kv_row("Provider", tier["provider"]),
                 kv_row("Model", tier["model"]),
-                kv_row("Max Output Tokens", str(tier["max_output_tokens"])),
-                kv_row("Input $/1M", f"${tier['input_per_million']}"),
-                kv_row("Output $/1M", f"${tier['output_per_million']}"),
+                kv_row("Best for", best_for),
+                kv_row("Relative cost", cost_level),
             ]
         )
-        reasons = "".join(f"<li style='margin-bottom:4px;'>{r}</li>" for r in tier["reasons"])
         with col:
             st.markdown(
                 f'<div class="mp-card">'
                 f'<div style="margin-bottom:12px;">{tier_badge(tier_name.upper())}</div>'
                 f"{rows}"
-                f'<div style="margin-top:12px; font-size:13px; color:{COLORS["text_muted"]};">'
-                f'<ul style="padding-left:18px; margin:0;">{reasons}</ul></div>'
                 f"</div>",
                 unsafe_allow_html=True,
             )
@@ -391,7 +354,7 @@ PAGES = {
 with st.sidebar:
     st.markdown(
         '<div style="font-size:19px; font-weight:600; letter-spacing:-0.01em; '
-        'margin-bottom:2px;">RoutingBridge</div>'
+        'margin-bottom:2px;">Raut IQ</div>'
         f'<div style="font-size:12.5px; color:{COLORS["text_muted"]}; margin-bottom:24px;">'
         "Multi-LLM Routing</div>",
         unsafe_allow_html=True,

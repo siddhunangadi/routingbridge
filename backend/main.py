@@ -32,19 +32,19 @@ async def lifespan(_app: FastAPI) -> AsyncGenerator[None, None]:
     # idempotent create_all() DDL means a real DB round-trip on every
     # boot, which is wasted work (and, against a remote Postgres, real
     # latency) for a schema that only changes when a model does.
-    logger.info("RoutingBridge API starting up")
+    logger.info("Raut IQ API starting up")
     yield
 
 
 app = FastAPI(
-    title="RoutingBridge",
+    title="Raut IQ",
     description=(
         "Explainable, self-learning multi-LLM routing platform: classifies each "
         "prompt, routes it to the cheapest capable model, records a full decision "
         "audit trail, and offline-analyzes its own routing history for "
         "optimization opportunities — all advisory, all human-approved."
     ),
-    version="0.1.0",
+    version="2.1.0",
     lifespan=lifespan,
 )
 

@@ -67,7 +67,7 @@ def _add_recommendation(db, **overrides):
     defaults = dict(
         task_type="Arithmetic",
         task_subcategory=None,
-        policy_version="v1.0",
+        policy_version="v2.1",
         current_provider="google",
         recommended_provider="openrouter",
         current_model="gemini-2.5-flash",
@@ -94,7 +94,7 @@ def test_normal_routing_no_recommendation(db_session):
     card, recommendation = get_decision_card(db_session, "req-1")
 
     assert card.request_id == "req-1"
-    assert card.policy_version == "v1.0"
+    assert card.policy_version == "v2.1"
     assert card.selected_tier == "BASIC"
     assert card.selected_provider == "google"
     assert card.selected_model == "gemini-2.5-flash"
@@ -129,7 +129,7 @@ def test_recommendation_available_when_fully_matching(db_session):
 
 def test_recommendation_ignored_when_policy_version_differs(db_session):
     _record(db_session)
-    _add_recommendation(db_session, policy_version="v2.0")
+    _add_recommendation(db_session, policy_version="v3.0")
 
     card, recommendation = get_decision_card(db_session, "req-1")
 

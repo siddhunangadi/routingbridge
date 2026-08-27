@@ -73,6 +73,8 @@ def record(
     provider_success: bool,
     error_message: str | None,
     quality_verdict: QualityVerdict | None,
+    generation_cost: float | None = None,
+    generation_latency_ms: float = 0.0,
 ) -> None:
     decision = decision_outcome.decision
     normalized_prompt = _normalize_prompt(prompt)
@@ -106,6 +108,16 @@ def record(
             classifier_tier=decision.routing_tier.value,
             final_tier=routing_result.tier.value,
             classifier_confidence=decision.confidence,
+            calibrated_confidence=decision_outcome.calibrated_confidence,
+            classifier_source=decision_outcome.classifier_source,
+            classifier_model=decision_outcome.classifier_model,
+            fallback_used=decision_outcome.fallback_used,
+            fallback_reason=decision_outcome.fallback_reason,
+            p_basic=decision_outcome.p_basic,
+            p_standard=decision_outcome.p_standard,
+            p_advanced=decision_outcome.p_advanced,
+            classifier_latency_ms=decision_outcome.latency_ms,
+            classifier_cost=decision_outcome.cost,
             task_type=decision.task_type,
             task_subcategory=None,
             classifier_reasoning=decision.reason,
@@ -124,6 +136,8 @@ def record(
             input_tokens=input_tokens,
             output_tokens=output_tokens,
             estimated_cost=total_cost,
+            generation_cost=total_cost - decision_outcome.cost if generation_cost is None else generation_cost,
+            generation_latency_ms=generation_latency_ms,
             error_message=error_message,
         )
     )
@@ -291,6 +305,7 @@ def get_decision_card(db: Session, request_id: str) -> tuple[DecisionCard, Recom
         selected_provider=decision.selected_provider,
         selected_model=decision.selected_model,
         selected_tier=decision.final_tier,
+        classifier_source=decision.classifier_source,
         routing_reason=decision.routing_reasoning.split(" | "),
         estimated_cost=execution.estimated_cost,
         estimated_latency_ms=execution.latency_ms,

@@ -10,13 +10,14 @@
 # Snapshotted into the routing_policies table at startup so every routing
 # decision can point at exactly the policy version that produced it. Bump
 # this manually when tiers/thresholds below change meaningfully.
-policy_version: "v1.0"
+policy_version: "v2.1"
+
+router:
+  production_policy: active
+  production_architecture: local_semantic_with_mistral_fallback
 
 classifier:
-  # Runs on every request (classify + quality-verify), so it competed with
-  # the BASIC tier's own Gemini calls for the same 20-request/day free-tier
-  # quota and exhausted it within minutes of real traffic. Moved to
-  # OpenRouter, which the STANDARD tier already uses without quota issues.
+  # Structured Mistral routing fallback. The quality verifier is separate.
   provider: openrouter
   model: mistralai/mistral-small-3.2-24b-instruct
   max_output_tokens: 512
@@ -24,15 +25,29 @@ classifier:
 confidence_thresholds:
   high: 0.9
   low: 0.6
-  # low-confidence routing decisions get escalated to the next tier up
-  # (basic -> standard -> advanced) by the routing engine, not the classifier.
-  escalate_on_low_confidence: true
+  # Existing threshold retained as explicit experimental configuration.
+  # It is not a calibrated probability and is not production-validated.
 
 tiers:
   basic:
     provider: google
     model: gemini-2.5-flash
     max_output_tokens: 1024
+    estimated_latency_ms: 900
+    minimum_quality: 0.90
+    candidates:
+      - provider: openrouter
+        model: mistralai/mistral-small-3.2-24b-instruct
+        max_output_tokens: 1024
+        expected_cost: 0.000175
+        expected_quality: 0.92
+        expected_latency_ms: 1800
+      - provider: google
+        model: gemini-2.5-flash
+        max_output_tokens: 1024
+        expected_cost: 0.001325
+        expected_quality: 0.95
+        expected_latency_ms: 900
     reasons:
       - "Simple, short prompt"
       - "Low reasoning complexity"
@@ -41,6 +56,21 @@ tiers:
     provider: openrouter
     model: mistralai/mistral-small-3.2-24b-instruct
     max_output_tokens: 1536
+    estimated_latency_ms: 1800
+    minimum_quality: 0.92
+    candidates:
+      - provider: openrouter
+        model: mistralai/mistral-small-3.2-24b-instruct
+        max_output_tokens: 1536
+        expected_cost: 0.000175
+        expected_quality: 0.92
+        expected_latency_ms: 1800
+      - provider: google
+        model: gemini-2.5-flash
+        max_output_tokens: 1536
+        expected_cost: 0.001325
+        expected_quality: 0.95
+        expected_latency_ms: 900
     reasons:
       - "Requires moderate multi-step reasoning"
       - "Structured but not deeply technical"
@@ -53,6 +83,15 @@ tiers:
     # but the simplest prompts (observed: null content at max_tokens=1024
     # on a 4-part "explain in depth" prompt).
     max_output_tokens: 4096
+    estimated_latency_ms: 5000
+    minimum_quality: 0.96
+    candidates:
+      - provider: openrouter
+        model: deepseek/deepseek-r1
+        max_output_tokens: 4096
+        expected_cost: 0.0012325
+        expected_quality: 0.98
+        expected_latency_ms: 5000
     reasons:
       - "Complex, multi-step reasoning required"
       - "Long or nuanced prompt"

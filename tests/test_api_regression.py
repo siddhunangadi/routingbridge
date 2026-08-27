@@ -27,17 +27,23 @@ from backend.services.quality_verifier import get_quality_verifier
 EXPECTED_CHAT_KEYS = {
     "request_id", "prompt", "response", "routing_tier", "original_tier",
     "escalated", "task_type", "reasoning_level", "confidence", "routing_reason",
-    "classifier_model", "fallback_used", "provider", "model", "input_tokens",
+    "classifier_model", "classifier_source", "fallback_used", "fallback_reason",
+    "calibrated_confidence", "p_basic", "p_standard", "p_advanced",
+    "provider", "model", "input_tokens",
     "output_tokens", "classifier_cost", "model_cost", "total_cost",
-    "total_latency_ms", "quality_passed", "quality_reason", "timestamp",
+    "classifier_latency_ms", "generation_latency_ms", "total_latency_ms",
+    "quality_passed", "quality_reason", "timestamp",
 }
 
 EXPECTED_HISTORY_KEYS = {
     "id", "timestamp", "prompt", "response", "routing_tier", "original_tier",
     "escalated", "task_type", "reasoning_level", "confidence", "routing_reason",
-    "classifier_model", "fallback_used", "provider", "model", "input_tokens",
+    "classifier_model", "classifier_source", "fallback_used", "fallback_reason",
+    "calibrated_confidence", "p_basic", "p_standard", "p_advanced",
+    "provider", "model", "input_tokens",
     "output_tokens", "classifier_cost", "model_cost", "total_cost",
-    "total_latency_ms", "quality_passed", "quality_reason",
+    "classifier_latency_ms", "generation_latency_ms", "total_latency_ms",
+    "quality_passed", "quality_reason",
 }
 
 EXPECTED_STATS_KEYS = {
@@ -111,8 +117,8 @@ def test_chat_response_contract_unchanged(client):
     assert response.status_code == 200
     body = response.json()
     assert set(body.keys()) == EXPECTED_CHAT_KEYS
-    assert body["provider"] == "google"
-    assert body["model"] == "gemini-2.5-flash"
+    assert body["provider"] == "openrouter"
+    assert body["model"] == "mistralai/mistral-small-3.2-24b-instruct"
     assert body["quality_passed"] is True
 
 
@@ -160,7 +166,7 @@ def test_analytics_endpoints_end_to_end(client):
 
     routing = client.get("/analytics/routing")
     assert routing.status_code == 200
-    assert routing.json()["providers"][0]["provider"] == "google"
+    assert routing.json()["providers"][0]["provider"] == "openrouter"
 
     patterns = client.get("/analytics/patterns")
     assert patterns.status_code == 200
@@ -181,9 +187,22 @@ def test_routing_decision_endpoint(client):
     body = response.json()
     assert set(body.keys()) == {"decision_card", "recommendation"}
     assert body["decision_card"]["request_id"] == request_id
-    assert body["decision_card"]["selected_provider"] == "google"
+    assert body["decision_card"]["selected_provider"] == "openrouter"
     assert body["decision_card"]["recommendation_available"] is False
     assert body["recommendation"] is None
+
+
+def test_router_benchmark_endpoint_reports_evidence_and_review_status(client):
+    response = client.get("/analytics/benchmark")
+
+    assert response.status_code == 200
+    body = response.json()
+    assert len(body["strategies"]) == 6
+    assert body["dataset"]["human_reviewed"] == 0
+    assert {row["strategy"] for row in body["strategies"]} == {
+        "always_basic", "always_standard", "always_advanced", "heuristic_historical",
+        "llm_fallback", "local_semantic"
+    }
 
 
 def test_routing_decision_endpoint_404_for_unknown_request(client):

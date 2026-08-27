@@ -25,7 +25,13 @@ class ChatResponse(BaseModel):
     routing_reason: list[str]
 
     classifier_model: str
+    classifier_source: str
     fallback_used: bool
+    fallback_reason: str | None
+    calibrated_confidence: float | None
+    p_basic: float | None
+    p_standard: float | None
+    p_advanced: float | None
 
     provider: str
     model: str
@@ -35,6 +41,8 @@ class ChatResponse(BaseModel):
     classifier_cost: float
     model_cost: float
     total_cost: float
+    classifier_latency_ms: float
+    generation_latency_ms: float
     total_latency_ms: float
 
     quality_passed: bool | None
